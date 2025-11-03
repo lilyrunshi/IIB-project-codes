@@ -28,13 +28,43 @@ awgn: awgn.py
   $y: y
 
 # --- analyze (complex: separate Python files) ---
-model_1a: model_1a.py
+model_1a: model_1a_bayesian_regression_shared_prior.py
   x: $x
   y: $y
   $fit: fit
   $y_hat: y_hat
 
-model_1b: model_1b.py
+model_1b: model_1b_bayesian_regression_with_ard.py
+  x: $x
+  y: $y
+  $fit: fit
+  $y_hat: y_hat
+
+model_2: model_2_bayesian_regression_group_switch.py
+  x: $x
+  y: $y
+  $fit: fit
+  $y_hat: y_hat
+
+model_3: model_3_bayesian_regression_learned_group_sparsity.py
+  x: $x
+  y: $y
+  $fit: fit
+  $y_hat: y_hat
+
+model_4: model_4_reparameterized_regression.py
+  x: $x
+  y: $y
+  $fit: fit
+  $y_hat: y_hat
+
+model_6: model_6_spike_and_slab_shared_precision.py
+  x: $x
+  y: $y
+  $fit: fit
+  $y_hat: y_hat
+
+model_7: model_7_spike_and_slab_ard_precision.py
   x: $x
   y: $y
   $fit: fit
@@ -54,7 +84,7 @@ mae: mae.py
 DSC:
   define:
     simulate: awgn
-    analyze: model_1a, model_1b
+    analyze: model_1a, model_1b, model_2, model_3, model_4, model_6, model_7
     score: rmse, mae
   run: simulate * analyze * score
   output: dsc_result
