@@ -10,5 +10,6 @@ fit = {
     "coef_": ard.coef_.tolist(),
     "intercept_": float(ard.intercept_),
     "alpha_noise_": float(ard.alpha_),    # noise precision
-    "lambda_weights_": ard.lambda_.tolist() 
+    "lambda_weights_": ard.lambda_.tolist(),
 }
+

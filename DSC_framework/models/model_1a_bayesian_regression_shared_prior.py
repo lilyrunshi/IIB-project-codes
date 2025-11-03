@@ -10,5 +10,6 @@ fit = {
     "coef_": br.coef_.tolist(),
     "intercept_": float(br.intercept_),
     "alpha_noise_": float(br.alpha_),   # noise precision
-    "lambda_weights_": float(br.lambda_)  # weights precision
+    "lambda_weights_": float(br.lambda_),  # weights precision
 }
+
