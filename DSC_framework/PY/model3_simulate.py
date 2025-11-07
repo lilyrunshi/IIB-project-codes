@@ -23,9 +23,6 @@ expects the following variables to be defined in the global namespace:
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
-
-from __future__ import annotations
-
 import numpy as np
 
 # Create a random number generator that can be seeded from the DSC configuration.
