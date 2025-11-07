@@ -2,6 +2,14 @@ import numpy as np
 from sklearn.metrics import r2_score, mean_squared_error
 from scipy.stats import spearmanr
 
+
+def _percentage_scale(y_true, y_pred):
+    """Return a stable scale for percentage error calculations."""
+    return np.maximum(
+        np.maximum(np.abs(y_true), np.abs(y_pred)),
+        np.finfo(float).eps,
+    )
+
 def evaluate_model(beta_true, Y, beta_hat, predictions, selection):
     """
     Evaluate model performance with metrics specially designed for oscillatory data analysis
@@ -33,13 +41,11 @@ def evaluate_model(beta_true, Y, beta_hat, predictions, selection):
     # 2. Prediction Quality Metrics
     R2 = r2_score(Y, predictions)
     diff = Y - predictions
-    scale = (np.abs(Y) + np.abs(predictions)) / 2.0
-    valid = scale > np.finfo(float).eps
+    scale = _percentage_scale(Y, predictions)
 
-    relative_squared_error = np.zeros_like(diff, dtype=float)
-    relative_squared_error[valid] = (diff[valid] / scale[valid]) ** 2
-
-    rmse = np.sqrt(np.mean(relative_squared_error)) * 100.0
+    relative_error = np.abs(diff) / scale
+    rmse = np.sqrt(np.mean((diff / scale) ** 2)) * 100.0
+    mae = np.mean(relative_error) * 100.0
     # Calculate rank correlation to assess pattern matching
     rho, _ = spearmanr(Y, predictions)
     
@@ -70,6 +76,7 @@ def evaluate_model(beta_true, Y, beta_hat, predictions, selection):
     additional_metrics = {
         'relative_error': rel_error,
         'rmse': rmse,
+        'mae': mae,
         'rank_correlation': rho,
         'precision': Precision,
         'specificity': Specificity,
@@ -79,3 +86,4 @@ def evaluate_model(beta_true, Y, beta_hat, predictions, selection):
     }
     
     return mse_beta, R2, FDR, Power
+
