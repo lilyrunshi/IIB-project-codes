@@ -2764,6 +2764,7 @@ model3_simulate: model3_simulate.py
   d: 20          # features
   seed: 8675309  # reproducibility for the latent draws
   noise_std: 0.2, 0.5, 1.0  # explore different observation noise levels
+  sparsity_prob: 0.2, 0.5, 0.8  # probe a range of latent sparsity levels
   $x: x
   $y: y
 # --- analyze (complex: separate Python files) ---
@@ -2833,7 +2834,7 @@ DSC:
     </tr>
     <tr>
         <td>model3_simulate</td>
-        <td>d, n, noise_std, seed</td>
+        <td>d, n, noise_std, seed, sparsity_prob</td>
         <td></td>
         <td>x, y</td>
         <td>PY</td>
@@ -2930,12 +2931,12 @@ DSC:
 <div id=model3_simulate-model1a-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model1a-mae_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model1a-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model1a-mae_model1a-model_1a_bayesian_regression_shared_priorpy-450a73d2">model1a (model_1a_bayesian_regression_shared_prior.py 450a73d2)</a></li>
 <li><a href="#model3_simulate-model1a-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model1a-mae_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model1a-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -2959,6 +2960,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -2973,6 +2978,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -2980,7 +2992,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -3026,12 +3041,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model1a-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model1a-rmse_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model1a-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model1a-rmse_model1a-model_1a_bayesian_regression_shared_priorpy-450a73d2">model1a (model_1a_bayesian_regression_shared_prior.py 450a73d2)</a></li>
 <li><a href="#model3_simulate-model1a-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model1a-rmse_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model1a-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3055,6 +3070,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -3069,6 +3088,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -3076,7 +3102,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -3122,12 +3151,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model1b-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model1b-mae_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model1b-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model1b-mae_model1b-model_1b_bayesian_regression_with_ardpy-91ca78d0">model1b (model_1b_bayesian_regression_with_ard.py 91ca78d0)</a></li>
 <li><a href="#model3_simulate-model1b-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model1b-mae_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model1b-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3151,6 +3180,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -3165,6 +3198,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -3172,7 +3212,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -3218,12 +3261,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model1b-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model1b-rmse_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model1b-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model1b-rmse_model1b-model_1b_bayesian_regression_with_ardpy-91ca78d0">model1b (model_1b_bayesian_regression_with_ard.py 91ca78d0)</a></li>
 <li><a href="#model3_simulate-model1b-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model1b-rmse_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model1b-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3247,6 +3290,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -3261,6 +3308,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -3268,7 +3322,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -3314,12 +3371,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model2-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model2-mae_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model2-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model2-mae_model2-model_2_bayesian_regression_group_switchpy-b71c4a2a">model2 (model_2_bayesian_regression_group_switch.py b71c4a2a)</a></li>
 <li><a href="#model3_simulate-model2-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model2-mae_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model2-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3343,6 +3400,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -3357,6 +3418,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -3364,7 +3432,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -3474,12 +3545,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model2-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model2-rmse_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model2-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model2-rmse_model2-model_2_bayesian_regression_group_switchpy-b71c4a2a">model2 (model_2_bayesian_regression_group_switch.py b71c4a2a)</a></li>
 <li><a href="#model3_simulate-model2-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model2-rmse_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model2-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3503,6 +3574,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -3517,6 +3592,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -3524,7 +3606,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -3634,12 +3719,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model3-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model3-mae_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model3-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model3-mae_model3-model_3_bayesian_regression_learned_group_sparsitypy-c657b8e8">model3 (model_3_bayesian_regression_learned_group_sparsity.py c657b8e8)</a></li>
 <li><a href="#model3_simulate-model3-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model3-mae_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model3-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3663,6 +3748,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -3677,6 +3766,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -3684,7 +3780,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -3816,12 +3915,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model3-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model3-rmse_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model3-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model3-rmse_model3-model_3_bayesian_regression_learned_group_sparsitypy-c657b8e8">model3 (model_3_bayesian_regression_learned_group_sparsity.py c657b8e8)</a></li>
 <li><a href="#model3_simulate-model3-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model3-rmse_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model3-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3845,6 +3944,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -3859,6 +3962,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -3866,7 +3976,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -3998,12 +4111,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model4-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model4-mae_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model4-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model4-mae_model4-model_4_reparameterized_regressionpy-1a906ead">model4 (model_4_reparameterized_regression.py 1a906ead)</a></li>
 <li><a href="#model3_simulate-model4-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model4-mae_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model4-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4027,6 +4140,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -4041,6 +4158,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -4048,7 +4172,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -4141,12 +4268,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model4-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model4-rmse_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model4-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model4-rmse_model4-model_4_reparameterized_regressionpy-1a906ead">model4 (model_4_reparameterized_regression.py 1a906ead)</a></li>
 <li><a href="#model3_simulate-model4-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model4-rmse_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model4-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4170,6 +4297,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -4184,6 +4315,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -4191,7 +4329,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -4284,12 +4425,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model6-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model6-mae_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model6-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model6-mae_model6-model_6_spike_and_slab_shared_precisionpy-33f78e11">model6 (model_6_spike_and_slab_shared_precision.py 33f78e11)</a></li>
 <li><a href="#model3_simulate-model6-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model6-mae_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model6-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4313,6 +4454,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -4327,6 +4472,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -4334,7 +4486,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -4511,12 +4666,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model6-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model6-rmse_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model6-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model6-rmse_model6-model_6_spike_and_slab_shared_precisionpy-33f78e11">model6 (model_6_spike_and_slab_shared_precision.py 33f78e11)</a></li>
 <li><a href="#model3_simulate-model6-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model6-rmse_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model6-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4540,6 +4695,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -4554,6 +4713,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -4561,7 +4727,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -4738,12 +4907,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model7-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model7-mae_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model7-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model7-mae_model7-model_7_spike_and_slab_ard_precisionpy-10a1fd78">model7 (model_7_spike_and_slab_ard_precision.py 10a1fd78)</a></li>
 <li><a href="#model3_simulate-model7-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model7-mae_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model7-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4767,6 +4936,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -4781,6 +4954,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -4788,7 +4968,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)
@@ -4952,12 +5135,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model7-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model7-rmse_model3_simulate-model3_simulatepy-4a0d57a0">model3_simulate (model3_simulate.py 4a0d57a0)</a></li>
+<li class="active"><a href="#model3_simulate-model7-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
 <li><a href="#model3_simulate-model7-rmse_model7-model_7_spike_and_slab_ard_precisionpy-10a1fd78">model7 (model_7_spike_and_slab_ard_precision.py 10a1fd78)</a></li>
 <li><a href="#model3_simulate-model7-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model7-rmse_model3_simulate-model3_simulatepy-4a0d57a0" class="tab active">
+<div id="model3_simulate-model7-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4981,6 +5164,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
 """
@@ -4995,6 +5182,13 @@ e0 = float(globals().get("e0", 1.0))
 f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
     beta = rng.gamma(shape=c0, scale=1.0 / d0)
@@ -5002,7 +5196,10 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 gamma_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
 gamma_vector = np.ones(d)

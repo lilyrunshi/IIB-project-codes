@@ -13,17 +13,23 @@ suppressPackageStartupMessages({
   library(ggplot2)
 })
 
+coerce_numeric <- function(x) {
+  if (is.numeric(x)) {
+    return(x)
+  }
+  parse_number(as.character(x))
+}
+
 #' Prepare the DSC output for numeric summaries.
 #'
 #' @param dscout A tibble produced by dscquery().
 #' @return A tibble with numeric columns ready for aggregation.
 normalize_noise_results <- function(dscout) {
   dscout %>%
-    mutate(
-      simulate.noise_std = parse_number(simulate.noise_std),
-      rmse.error = parse_number(rmse.error),
-      mae.error = parse_number(mae.error)
-    )
+    mutate(across(
+      c(simulate.noise_std, rmse.error, mae.error),
+      coerce_numeric
+    ))
 }
 
 #' Summarise the RMSE and MAE distribution for each noise level and analysis module.
@@ -57,33 +63,76 @@ pivot_noise_summary <- function(summary_tbl) {
     arrange(metric, simulate.noise_std, analyze)
 }
 
-#' Plot the score distribution as a function of the simulated noise level.
+#' Plot score distributions per noise level and aggregate trends.
 #'
 #' @param dscout A tibble from dscquery().
-#' @return A ggplot object showing boxplots with mean overlays.
+#' @return A list containing individual boxplots for every
+#'   (noise level, metric) pair and a summary plot of the mean errors across
+#'   noise levels.
 plot_noise_performance <- function(dscout) {
-  normalize_noise_results(dscout) %>%
+  tidy_scores <- normalize_noise_results(dscout) %>%
     pivot_longer(
       cols = c(rmse.error, mae.error),
       names_to = "metric",
       values_to = "value"
-    ) %>%
-    ggplot(aes(x = factor(simulate.noise_std), y = value, fill = analyze)) +
-    geom_boxplot(alpha = 0.6, position = position_dodge(width = 0.9), na.rm = TRUE) +
-    stat_summary(
-      fun = mean,
-      geom = "point",
-      position = position_dodge(width = 0.9),
-      shape = 21,
-      size = 2,
-      colour = "black"
-    ) +
+    )
+
+  per_noise_groups <- tidy_scores %>%
+    group_by(simulate.noise_std, metric)
+
+  per_noise_keys <- group_keys(per_noise_groups)
+
+  per_noise_plots <- group_map(
+    per_noise_groups,
+    function(df, key) {
+      metric_label <- toupper(gsub("\\.error$", "", key$metric))
+
+      ggplot(
+        df,
+        aes(x = analyze, y = value, fill = analyze)
+      ) +
+        geom_boxplot(alpha = 0.6, na.rm = TRUE) +
+        stat_summary(
+          fun = mean,
+          geom = "point",
+          shape = 21,
+          size = 2,
+          colour = "black"
+        ) +
+        labs(
+          title = sprintf("%s | noise = %s", metric_label, key$simulate.noise_std),
+          x = "Analysis module",
+          y = "Error",
+          fill = "Model"
+        ) +
+        theme_minimal()
+    }
+  )
+
+  names(per_noise_plots) <- sprintf(
+    "%s_noise_%s",
+    per_noise_keys$metric,
+    per_noise_keys$simulate.noise_std
+  )
+
+  trend_data <- tidy_scores %>%
+    group_by(simulate.noise_std, analyze, metric) %>%
+    summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+  average_plot <- ggplot(
+    trend_data,
+    aes(x = simulate.noise_std, y = mean_value, colour = analyze)
+  ) +
+    geom_line() +
+    geom_point(size = 2) +
     facet_wrap(~ metric, scales = "free_y") +
     labs(
+      title = "Mean error across noise levels",
       x = "Noise standard deviation",
-      y = "Error",
-      fill = "Model",
-      title = "Model performance across simulated noise levels"
+      y = "Mean error",
+      colour = "Model"
     ) +
     theme_minimal()
+
+  list(individual = per_noise_plots, average = average_plot)
 }
