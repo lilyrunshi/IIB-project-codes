@@ -11,26 +11,8 @@ suppressPackageStartupMessages({
   library(tidyr)
   library(readr)
   library(ggplot2)
+  library(patchwork)
 })
-
-# Patchwork is an optional dependency that simplifies combining plots, but it
-# may not be available in minimal R installations.  Instead of loading it
-# eagerly (which would error when missing), we provide a small wrapper that
-# tries to use patchwork when installed and otherwise falls back to returning
-# the individual plot list.  Downstream callers can still access the
-# individual/average plots without interruption.
-wrap_plots_safe <- function(plot_list, ncol = 1) {
-  if (requireNamespace("patchwork", quietly = TRUE)) {
-    return(patchwork::wrap_plots(plotlist = plot_list, ncol = ncol))
-  }
-
-  warning(
-    "Package 'patchwork' is not installed; returning the plot list instead of a combined patchwork object.",
-    call. = FALSE
-  )
-
-  plot_list
-}
 
 coerce_numeric <- function(x) {
   if (is.numeric(x)) {
@@ -165,7 +147,7 @@ plot_noise_performance <- function(dscout) {
     ) +
     theme_minimal()
 
-  combined_plot <- wrap_plots_safe(
+  combined_plot <- wrap_plots(
     c(per_noise_plots, list(average_plot)),
     ncol = 1
   )
