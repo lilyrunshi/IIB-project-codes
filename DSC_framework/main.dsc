@@ -19,11 +19,11 @@
 #
 
 # --- simulate ---
-# Simulate data with Additive White Gaussian Noise
-awgn: awgn.py
+# Simulate data from Model 3 (learned group sparsity)
+model3_simulate: model3_simulate.py
   n: 200         # samples
   d: 20          # features
-  snr_db: 10     # signal-to-noise ratio (in dB)
+  seed: 8675309  # reproducibility for the latent draws
   $x: x
   $y: y
 
@@ -83,7 +83,7 @@ mae: mae.py
 
 DSC:
   define:
-    simulate: awgn
+    simulate: model3_simulate
     analyze: model_1a, model_1b, model_2, model_3, model_4, model_6, model_7
     score: rmse, mae
   run: simulate * analyze * score
