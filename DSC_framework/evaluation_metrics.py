@@ -40,7 +40,6 @@ def evaluate_model(beta_true, Y, beta_hat, predictions, selection):
     relative_squared_error[valid] = (diff[valid] / scale[valid]) ** 2
 
     rmse = np.sqrt(np.mean(relative_squared_error)) * 100.0
-    
     # Calculate rank correlation to assess pattern matching
     rho, _ = spearmanr(Y, predictions)
     
