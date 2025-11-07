@@ -11,6 +11,7 @@ suppressPackageStartupMessages({
   library(tidyr)
   library(readr)
   library(ggplot2)
+  library(patchwork)
 })
 
 coerce_numeric <- function(x) {
@@ -146,7 +147,16 @@ plot_noise_performance <- function(dscout) {
     ) +
     theme_minimal()
 
-  list(individual = per_noise_plots, average = average_plot)
+  combined_plot <- wrap_plots(
+    c(per_noise_plots, list(average_plot)),
+    ncol = 1
+  )
+
+  list(
+    individual = per_noise_plots,
+    average = average_plot,
+    combined = combined_plot
+  )
 }
 
 #' Summarise the RMSE and MAE distribution for each sparsity level and analysis module.
@@ -255,5 +265,14 @@ plot_sparsity_performance <- function(dscout) {
     ) +
     theme_minimal()
 
-  list(individual = per_sparsity_plots, average = average_plot)
+  combined_plot <- wrap_plots(
+    c(per_sparsity_plots, list(average_plot)),
+    ncol = 1
+  )
+
+  list(
+    individual = per_sparsity_plots,
+    average = average_plot,
+    combined = combined_plot
+  )
 }
