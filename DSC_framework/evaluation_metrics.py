@@ -32,7 +32,8 @@ def evaluate_model(beta_true, Y, beta_hat, predictions, selection):
     
     # 2. Prediction Quality Metrics
     R2 = r2_score(Y, predictions)
-    rmse = np.sqrt(mean_squared_error(Y, predictions))
+    denom = np.maximum(np.abs(Y), np.finfo(float).eps)
+    rmse = np.sqrt(np.mean(((Y - predictions) / denom) ** 2)) * 100.0
     
     # Calculate rank correlation to assess pattern matching
     rho, _ = spearmanr(Y, predictions)
