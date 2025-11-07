@@ -25,6 +25,7 @@ model3_simulate: model3_simulate.py
   d: 20          # features
   seed: 8675309  # reproducibility for the latent draws
   noise_std: 0.2, 0.5, 1.0  # explore different observation noise levels
+  sparsity_prob: 0.2, 0.5, 0.8  # probe a range of latent sparsity levels
   $x: x
   $y: y
 

@@ -22,6 +22,10 @@ expects the following variables to be defined in the global namespace:
 ``noise_std`` (optional)
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
+``sparsity_prob`` (optional)
+    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
+    are active). When omitted the probability is sampled from the Beta prior
+    defined by ``e0`` and ``f0``.
 
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages.
@@ -49,6 +53,14 @@ f0 = float(globals().get("f0", 1.0))
 noise_std_value = globals().get("noise_std", None)
 noise_std = None if noise_std_value is None else float(noise_std_value)
 
+sparsity_prob_value = globals().get("sparsity_prob", None)
+if sparsity_prob_value is not None:
+    pi_override = float(sparsity_prob_value)
+    if not 0.0 <= pi_override <= 1.0:
+        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
+else:
+    pi_override = None
+
 # Sample global latent variables from their respective priors.
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 if noise_std is None:
@@ -57,7 +69,11 @@ if noise_std is None:
 else:
     noise_scale = noise_std
     beta = 1.0 / (noise_scale ** 2)
-pi = rng.beta(e0, f0)
+
+if pi_override is None:
+    pi = rng.beta(e0, f0)
+else:
+    pi = pi_override
 
 # Bernoulli switch shared by every feature except the first.
 gamma_switch = rng.binomial(1, pi)
