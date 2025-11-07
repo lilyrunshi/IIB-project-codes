@@ -24,6 +24,7 @@ model3_simulate: model3_simulate.py
   n: 200         # samples
   d: 20          # features
   seed: 8675309  # reproducibility for the latent draws
+  noise_std: 0.2, 0.5, 1.0  # explore different observation noise levels
   $x: x
   $y: y
 
