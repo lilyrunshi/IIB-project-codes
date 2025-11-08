@@ -13,6 +13,59 @@ suppressPackageStartupMessages({
   library(ggplot2)
 })
 
+pause_and_store_plots <- function(
+    plot_list,
+    average_plot,
+    output_dir,
+    pause_seconds,
+    display_plots,
+    average_basename) {
+  if (is.null(pause_seconds) || is.na(pause_seconds)) {
+    pause_seconds <- 0
+  }
+  pause_seconds <- max(0, pause_seconds)
+  display_plots <- isTRUE(display_plots)
+
+  if (!is.null(output_dir)) {
+    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  }
+
+  for (plot_name in names(plot_list)) {
+    plot_obj <- plot_list[[plot_name]]
+    if (display_plots) {
+      print(plot_obj)
+    }
+    if (!is.null(output_dir)) {
+      ggsave(
+        filename = file.path(output_dir, paste0(plot_name, ".png")),
+        plot = plot_obj,
+        width = 8,
+        height = 5,
+        dpi = 300
+      )
+    }
+    if (pause_seconds > 0) {
+      Sys.sleep(pause_seconds)
+    }
+  }
+
+  if (display_plots) {
+    print(average_plot)
+  }
+  if (!is.null(output_dir)) {
+    ggsave(
+      filename = file.path(output_dir, paste0(average_basename, ".png")),
+      plot = average_plot,
+      width = 8,
+      height = 5,
+      dpi = 300
+    )
+  }
+  if (pause_seconds > 0) {
+    Sys.sleep(pause_seconds)
+  }
+}
+
 coerce_numeric <- function(x) {
   if (is.numeric(x)) {
     return(x)
@@ -78,10 +131,19 @@ pivot_noise_summary <- function(summary_tbl) {
 #' Plot score distributions per noise level and aggregate trends.
 #'
 #' @param dscout A tibble from dscquery().
-#' @return A list containing individual boxplots for every
-#'   (noise level, metric) pair and a summary plot of the mean errors across
-#'   noise levels.
-plot_noise_performance <- function(dscout) {
+#' @param pause_seconds Number of seconds to wait after printing each plot.
+#'   Defaults to 1 second.
+#' @param output_dir Directory where plots should be written.  The directory
+#'   will be created if it does not exist.  Set to `NULL` to skip saving.
+#' @param display_plots Should the plots be printed as they are generated?
+#'   Defaults to `interactive()`.
+#' @return A list containing individual boxplots for every (noise level, metric)
+#'   pair and a summary plot of the mean errors across noise levels.
+plot_noise_performance <- function(
+    dscout,
+    pause_seconds = 1,
+    output_dir = file.path("plot_outputs", "noise"),
+    display_plots = interactive()) {
   tidy_scores <- normalize_noise_results(dscout) %>%
     pivot_longer(
       cols = c(rmse.error, mae.error),
@@ -146,6 +208,15 @@ plot_noise_performance <- function(dscout) {
     ) +
     theme_minimal()
 
+  pause_and_store_plots(
+    per_noise_plots,
+    average_plot,
+    output_dir,
+    pause_seconds,
+    display_plots,
+    average_basename = "average_noise"
+  )
+
   list(individual = per_noise_plots, average = average_plot)
 }
 
@@ -183,10 +254,19 @@ pivot_sparsity_summary <- function(summary_tbl) {
 #' Plot score distributions per sparsity level and aggregate trends.
 #'
 #' @param dscout A tibble from dscquery().
-#' @return A list containing individual boxplots for every
-#'   (sparsity level, metric) pair and a summary plot of the mean errors across
-#'   sparsity levels.
-plot_sparsity_performance <- function(dscout) {
+#' @param pause_seconds Number of seconds to wait after printing each plot.
+#'   Defaults to 1 second.
+#' @param output_dir Directory where plots should be written.  The directory
+#'   will be created if it does not exist.  Set to `NULL` to skip saving.
+#' @param display_plots Should the plots be printed as they are generated?
+#'   Defaults to `interactive()`.
+#' @return A list containing individual boxplots for every (sparsity level,
+#'   metric) pair and a summary plot of the mean errors across sparsity levels.
+plot_sparsity_performance <- function(
+    dscout,
+    pause_seconds = 1,
+    output_dir = file.path("plot_outputs", "sparsity"),
+    display_plots = interactive()) {
   tidy_scores <- normalize_sparsity_results(dscout) %>%
     pivot_longer(
       cols = c(rmse.error, mae.error),
@@ -254,6 +334,15 @@ plot_sparsity_performance <- function(dscout) {
       colour = "Model",
     ) +
     theme_minimal()
+
+  pause_and_store_plots(
+    per_sparsity_plots,
+    average_plot,
+    output_dir,
+    pause_seconds,
+    display_plots,
+    average_basename = "average_sparsity"
+  )
 
   list(individual = per_sparsity_plots, average = average_plot)
 }
