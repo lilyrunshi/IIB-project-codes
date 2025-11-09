@@ -290,7 +290,7 @@ summarise_sparsity_performance <- function(dscout) {
       rmse_sd = sd(rmse.error, na.rm = TRUE),
       mae_mean = mean(mae.error, na.rm = TRUE),
       mae_sd = sd(mae.error, na.rm = TRUE),
-      .groups = "drop",
+      .groups = "drop"
     ) %>%
     arrange(simulate.sparsity_prob, analyze)
 }
@@ -304,7 +304,7 @@ pivot_sparsity_summary <- function(summary_tbl) {
     pivot_longer(
       cols = c(rmse_mean, rmse_sd, mae_mean, mae_sd),
       names_to = c("metric", ".value"),
-      names_pattern = "(.*)_(mean|sd)",
+      names_pattern = "(.*)_(mean|sd)"
     ) %>%
     arrange(metric, simulate.sparsity_prob, analyze)
 }
@@ -329,7 +329,7 @@ plot_sparsity_performance <- function(
     pivot_longer(
       cols = c(rmse.error, mae.error),
       names_to = "metric",
-      values_to = "value",
+      values_to = "value"
     )
 
   per_sparsity_groups <- tidy_scores %>%
@@ -344,7 +344,7 @@ plot_sparsity_performance <- function(
 
       ggplot(
         df,
-        aes(x = analyze, y = value, fill = analyze),
+        aes(x = analyze, y = value, fill = analyze)
       ) +
         geom_boxplot(alpha = 0.6, na.rm = TRUE) +
         stat_summary(
@@ -352,17 +352,17 @@ plot_sparsity_performance <- function(
           geom = "point",
           shape = 21,
           size = 2,
-          colour = "black",
+          colour = "black"
         ) +
         labs(
           title = sprintf(
             "%s | sparsity = %s",
             metric_label,
-            key$simulate.sparsity_prob,
+            key$simulate.sparsity_prob
           ),
           x = "Analysis module",
           y = "Error",
-          fill = "Model",
+          fill = "Model"
         ) +
         theme_minimal()
     }
@@ -371,7 +371,7 @@ plot_sparsity_performance <- function(
   names(per_sparsity_plots) <- sprintf(
     "%s_sparsity_%s",
     per_sparsity_keys$metric,
-    per_sparsity_keys$simulate.sparsity_prob,
+    per_sparsity_keys$simulate.sparsity_prob
   )
 
   trend_data <- tidy_scores %>%
@@ -380,7 +380,7 @@ plot_sparsity_performance <- function(
 
   average_plot <- ggplot(
     trend_data,
-    aes(x = simulate.sparsity_prob, y = mean_value, colour = analyze),
+    aes(x = simulate.sparsity_prob, y = mean_value, colour = analyze)
   ) +
     geom_line() +
     geom_point(size = 2) +
@@ -389,7 +389,7 @@ plot_sparsity_performance <- function(
       title = "Mean error across sparsity levels",
       x = "Latent sparsity probability",
       y = "Mean error",
-      colour = "Model",
+      colour = "Model"
     ) +
     theme_minimal()
 
