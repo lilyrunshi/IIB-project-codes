@@ -623,12 +623,12 @@ run_noise_sparsity_analysis <- function(
     pause_seconds = 0,
     output_root = "plot_outputs",
     display_plots = interactive()) {
-  if (!requireNamespace("dscrutils", quietly = TRUE)) {
-    stop("Package 'dscrutils' must be installed to query DSC outputs.")
+  if (!requireNamespace("dsc", quietly = TRUE)) {
+    stop("Package 'dsc' must be installed to query DSC outputs.")
   }
 
   message("Loading DSC outputs from: ", dsc_path)
-  dscout <- dscrutils::dscquery(
+  dscout <- dsc::dscquery(
     dsc.outdir = dsc_path,
     targets = c(
       "simulate.noise_std",
