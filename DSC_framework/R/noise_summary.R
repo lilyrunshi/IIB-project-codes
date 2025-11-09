@@ -598,3 +598,86 @@ plot_noise_sparsity_performance <- function(
 
   list(boxplots = per_factor_plots, average = average_plot)
 }
+
+#' Run a full DSC noise/sparsity analysis workflow.
+#'
+#' This helper collects the common steps discussed in the notebook workflow:
+#' load the required packages, query the DSC output, produce tidy summaries and
+#' generate the standard plots.  It returns a list so you can inspect both the
+#' summaries and the `ggplot` objects programmatically.
+#'
+#' @param dsc_path Path to the DSC run directory (the folder that contains the
+#'   `dsc-result.rds` file).
+#' @param pause_seconds Seconds to wait between plot renders.  Defaults to 0 so
+#'   scripted runs finish quickly.
+#' @param output_root Base directory where the noise/sparsity plots should be
+#'   written.  Subdirectories for each analysis type will be created
+#'   automatically.
+#' @param display_plots Should plots be printed while the workflow runs?
+#'   Defaults to `interactive()`.
+#' @return A list with the raw DSC tibble, per-factor summaries and the plot
+#'   objects produced during the workflow.
+run_noise_sparsity_analysis <- function(
+    dsc_path,
+    pause_seconds = 0,
+    output_root = "plot_outputs",
+    display_plots = interactive()) {
+  if (!requireNamespace("dsc", quietly = TRUE)) {
+    stop("Package 'dsc' must be installed to query DSC outputs.")
+  }
+
+  message("Loading DSC outputs from: ", dsc_path)
+  dscout <- dsc::dscquery(
+    dsc.outdir = dsc_path,
+    targets = c(
+      "simulate.noise_std",
+      "simulate.sparsity_prob",
+      "analyze",
+      "rmse.error",
+      "mae.error"
+    )
+  )
+
+  if (!inherits(dscout, "tbl_df")) {
+    dscout <- dplyr::as_tibble(dscout)
+  }
+
+  message("Summarising noise sweep performance ...")
+  noise_summary <- summarise_noise_performance(dscout)
+  message("Summarising sparsity sweep performance ...")
+  sparsity_summary <- summarise_sparsity_performance(dscout)
+  message("Summarising combined sweep performance ...")
+  joint_summary <- summarise_noise_sparsity_performance(dscout)
+
+  message("Rendering plots ...")
+  noise_plots <- plot_noise_performance(
+    dscout,
+    pause_seconds = pause_seconds,
+    output_dir = file.path(output_root, "noise"),
+    display_plots = display_plots
+  )
+  sparsity_plots <- plot_sparsity_performance(
+    dscout,
+    pause_seconds = pause_seconds,
+    output_dir = file.path(output_root, "sparsity"),
+    display_plots = display_plots
+  )
+  joint_plots <- plot_noise_sparsity_performance(
+    dscout,
+    pause_seconds = pause_seconds,
+    output_dir = file.path(output_root, "noise_sparsity"),
+    display_plots = display_plots
+  )
+
+  list(
+    dsc_output = dscout,
+    noise_summary = noise_summary,
+    sparsity_summary = sparsity_summary,
+    joint_summary = joint_summary,
+    plots = list(
+      noise = noise_plots,
+      sparsity = sparsity_plots,
+      noise_sparsity = joint_plots
+    )
+  )
+}
