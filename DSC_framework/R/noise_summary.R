@@ -132,7 +132,7 @@ annotate_joint_sweep <- function(dscout) {
         !is.na(simulate.noise_std) & !is.na(baseline_noise) &
           !is.na(simulate.sparsity_prob) & !is.na(baseline_sparsity) &
           !near(simulate.noise_std, baseline_noise) &
-          !near(simulate.sparsity_prob, baseline_sparsity) ~ "multiple",
+          !near(simulate.sparsity_prob, baseline_sparsity) ~ "joint",
         !is.na(simulate.noise_std) & !is.na(baseline_noise) &
           !near(simulate.noise_std, baseline_noise) ~ "noise",
         !is.na(simulate.sparsity_prob) & !is.na(baseline_sparsity) &
@@ -144,37 +144,14 @@ annotate_joint_sweep <- function(dscout) {
         sweep_factor == "sparsity" ~ simulate.sparsity_prob,
         TRUE ~ NA_real_
       ),
+      sweep_noise = simulate.noise_std,
+      sweep_sparsity = simulate.sparsity_prob,
       baseline_noise = baseline_noise,
       baseline_sparsity = baseline_sparsity
     )
 
   attr(annotated, "baseline_noise") <- baseline_noise
   attr(annotated, "baseline_sparsity") <- baseline_sparsity
-  annotated
-}
-
-check_single_factor_design <- function(annotated) {
-  baseline_noise <- attr(annotated, "baseline_noise")
-  baseline_sparsity <- attr(annotated, "baseline_sparsity")
-
-  noise_differs <- !is.na(baseline_noise) & !is.na(annotated$simulate.noise_std) &
-    !dplyr::near(annotated$simulate.noise_std, baseline_noise)
-  sparsity_differs <- !is.na(baseline_sparsity) &
-    !is.na(annotated$simulate.sparsity_prob) &
-    !dplyr::near(annotated$simulate.sparsity_prob, baseline_sparsity)
-
-  conflict_mask <- noise_differs & sparsity_differs
-  conflict_mask[is.na(conflict_mask)] <- FALSE
-
-  conflicting_rows <- annotated[conflict_mask, , drop = FALSE]
-
-  if (nrow(conflicting_rows) > 0) {
-    stop(paste0(
-      "Detected runs where both noise and sparsity deviate from the baseline. ",
-      "The helper functions assume the DSC varies one factor at a time."
-    ))
-  }
-
   annotated
 }
 
@@ -313,7 +290,7 @@ summarise_sparsity_performance <- function(dscout) {
       rmse_sd = sd(rmse.error, na.rm = TRUE),
       mae_mean = mean(mae.error, na.rm = TRUE),
       mae_sd = sd(mae.error, na.rm = TRUE),
-      .groups = "drop",
+      .groups = "drop"
     ) %>%
     arrange(simulate.sparsity_prob, analyze)
 }
@@ -327,7 +304,7 @@ pivot_sparsity_summary <- function(summary_tbl) {
     pivot_longer(
       cols = c(rmse_mean, rmse_sd, mae_mean, mae_sd),
       names_to = c("metric", ".value"),
-      names_pattern = "(.*)_(mean|sd)",
+      names_pattern = "(.*)_(mean|sd)"
     ) %>%
     arrange(metric, simulate.sparsity_prob, analyze)
 }
@@ -352,7 +329,7 @@ plot_sparsity_performance <- function(
     pivot_longer(
       cols = c(rmse.error, mae.error),
       names_to = "metric",
-      values_to = "value",
+      values_to = "value"
     )
 
   per_sparsity_groups <- tidy_scores %>%
@@ -367,7 +344,7 @@ plot_sparsity_performance <- function(
 
       ggplot(
         df,
-        aes(x = analyze, y = value, fill = analyze),
+        aes(x = analyze, y = value, fill = analyze)
       ) +
         geom_boxplot(alpha = 0.6, na.rm = TRUE) +
         stat_summary(
@@ -375,17 +352,17 @@ plot_sparsity_performance <- function(
           geom = "point",
           shape = 21,
           size = 2,
-          colour = "black",
+          colour = "black"
         ) +
         labs(
           title = sprintf(
             "%s | sparsity = %s",
             metric_label,
-            key$simulate.sparsity_prob,
+            key$simulate.sparsity_prob
           ),
           x = "Analysis module",
           y = "Error",
-          fill = "Model",
+          fill = "Model"
         ) +
         theme_minimal()
     }
@@ -394,7 +371,7 @@ plot_sparsity_performance <- function(
   names(per_sparsity_plots) <- sprintf(
     "%s_sparsity_%s",
     per_sparsity_keys$metric,
-    per_sparsity_keys$simulate.sparsity_prob,
+    per_sparsity_keys$simulate.sparsity_prob
   )
 
   trend_data <- tidy_scores %>%
@@ -403,7 +380,7 @@ plot_sparsity_performance <- function(
 
   average_plot <- ggplot(
     trend_data,
-    aes(x = simulate.sparsity_prob, y = mean_value, colour = analyze),
+    aes(x = simulate.sparsity_prob, y = mean_value, colour = analyze)
   ) +
     geom_line() +
     geom_point(size = 2) +
@@ -412,7 +389,7 @@ plot_sparsity_performance <- function(
       title = "Mean error across sparsity levels",
       x = "Latent sparsity probability",
       y = "Mean error",
-      colour = "Model",
+      colour = "Model"
     ) +
     theme_minimal()
 
@@ -431,33 +408,41 @@ plot_sparsity_performance <- function(
 #' Summarise the RMSE and MAE distribution for noise and sparsity sweeps.
 #' 
 #' @param dscout A tibble from dscquery().
-#' @return A tibble of grouped summary statistics with the varied factor recorded.
+#' @return A list of grouped summary statistics for noise, sparsity and joint sweeps.
 summarise_noise_sparsity_performance <- function(dscout) {
-  annotated <- dscout %>%
-    annotate_joint_sweep() %>%
-    check_single_factor_design()
+  annotated <- annotate_joint_sweep(dscout)
 
   noise_summary <- annotated %>%
-    filter(sweep_factor != "sparsity") %>%
-    summarise_noise_performance() %>%
-    rename(sweep_value = simulate.noise_std) %>%
-    mutate(sweep_factor = "noise")
+    summarise_noise_performance()
 
   sparsity_summary <- annotated %>%
-    filter(sweep_factor != "noise") %>%
-    summarise_sparsity_performance() %>%
-    rename(sweep_value = simulate.sparsity_prob) %>%
-    mutate(sweep_factor = "sparsity")
+    summarise_sparsity_performance()
 
-  bind_rows(noise_summary, sparsity_summary) %>%
-    relocate(sweep_factor, sweep_value) %>%
-    arrange(sweep_factor, sweep_value, analyze)
+  joint_summary <- annotated %>%
+    normalize_noise_sparsity_results() %>%
+    group_by(simulate.noise_std, simulate.sparsity_prob, analyze) %>%
+    summarise(
+      rmse_mean = mean(rmse.error, na.rm = TRUE),
+      rmse_sd = sd(rmse.error, na.rm = TRUE),
+      mae_mean = mean(mae.error, na.rm = TRUE),
+      mae_sd = sd(mae.error, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    arrange(simulate.noise_std, simulate.sparsity_prob, analyze)
+
+  list(
+    noise = noise_summary,
+    sparsity = sparsity_summary,
+    joint = joint_summary
+  )
 }
 
 #' Convert the grouped summary table into a metric-oriented wide format.
 #'
-#' @param summary_tbl Output from summarise_noise_sparsity_performance().
-#' @return A tibble with mean/SD columns for each metric.
+#' @param summary_tbl Output from summarise_noise_sparsity_performance(). Provide one
+#'   of the list components (noise, sparsity or joint).
+#' @return A tibble with mean/SD columns for each metric. Joint summaries retain both
+#'   sweep dimensions.
 pivot_noise_sparsity_summary <- function(summary_tbl) {
   summary_tbl %>%
     pivot_longer(
@@ -465,7 +450,11 @@ pivot_noise_sparsity_summary <- function(summary_tbl) {
       names_to = c("metric", ".value"),
       names_pattern = "(.*)_(mean|sd)"
     ) %>%
-    arrange(metric, sweep_factor, sweep_value, analyze)
+    arrange(
+      metric,
+      across(matches("simulate\\.")),
+      analyze
+    )
 }
 
 #' Plot score distributions for each sweep factor and aggregate trends.
@@ -477,36 +466,43 @@ pivot_noise_sparsity_summary <- function(summary_tbl) {
 #'   will be created if it does not exist.  Set to `NULL` to skip saving.
 #' @param display_plots Should the plots be printed as they are generated?
 #'   Defaults to `interactive()`.
-#' @return A list containing per-factor boxplots (with baseline reference) and an
-#'   overview plot aggregating across analysis modules.
+#' @return A list containing per-factor boxplots (with baseline reference), a
+#'   heatmap of joint means and a trend plot aggregating across analysis modules.
 plot_noise_sparsity_performance <- function(
     dscout,
     pause_seconds = 1,
     output_dir = file.path("plot_outputs", "noise_sparsity"),
     display_plots = interactive()) {
-  annotated <- dscout %>%
-    annotate_joint_sweep() %>%
-    check_single_factor_design()
+  annotated <- annotate_joint_sweep(dscout)
+
+  baseline_noise <- attr(annotated, "baseline_noise")
+  baseline_sparsity <- attr(annotated, "baseline_sparsity")
 
   tidy_scores <- annotated %>%
-    filter(sweep_factor != "baseline") %>%
     pivot_longer(
       cols = c(rmse.error, mae.error),
       names_to = "metric",
       values_to = "value"
     )
 
-  baseline_summary <- annotated %>%
-    filter(sweep_factor == "baseline") %>%
-    pivot_longer(
-      cols = c(rmse.error, mae.error),
-      names_to = "metric",
-      values_to = "value"
+  baseline_summary <- tidy_scores %>%
+    filter(
+      (is.na(baseline_noise) | near(simulate.noise_std, baseline_noise)),
+      (is.na(baseline_sparsity) | near(simulate.sparsity_prob, baseline_sparsity))
     ) %>%
     group_by(analyze, metric) %>%
     summarise(baseline_mean = mean(value, na.rm = TRUE), .groups = "drop")
 
-  per_factor_groups <- tidy_scores %>%
+  per_factor_scores <- bind_rows(
+    tidy_scores %>%
+      mutate(sweep_factor = "noise", sweep_value = simulate.noise_std) %>%
+      filter(!is.na(sweep_value)),
+    tidy_scores %>%
+      mutate(sweep_factor = "sparsity", sweep_value = simulate.sparsity_prob) %>%
+      filter(!is.na(sweep_value))
+  )
+
+  per_factor_groups <- per_factor_scores %>%
     group_by(sweep_factor, metric)
 
   per_factor_keys <- group_keys(per_factor_groups)
@@ -563,42 +559,68 @@ plot_noise_sparsity_performance <- function(
     per_factor_keys$sweep_factor
   )
 
-  trend_data <- tidy_scores %>%
-    group_by(sweep_factor, sweep_value, analyze, metric) %>%
+  joint_means <- tidy_scores %>%
+    filter(!is.na(simulate.noise_std), !is.na(simulate.sparsity_prob)) %>%
+    group_by(simulate.noise_std, simulate.sparsity_prob, analyze, metric) %>%
     summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop")
 
-  average_plot <- ggplot(
-    trend_data,
-    aes(x = sweep_value, y = mean_value, colour = analyze)
+  joint_heatmap <- ggplot(
+    joint_means,
+    aes(
+      x = factor(simulate.noise_std),
+      y = factor(simulate.sparsity_prob),
+      fill = mean_value
+    )
   ) +
-    geom_line() +
-    geom_point(size = 2) +
-    facet_grid(
-      metric ~ sweep_factor,
-      scales = "free_y",
-      labeller = labeller(
-        sweep_factor = c(noise = "Noise standard deviation", sparsity = "Latent sparsity probability"),
-        metric = function(x) toupper(gsub("\\.error$", "", x))
-      )
-    ) +
+    geom_tile(colour = "white") +
+    facet_grid(metric ~ analyze) +
+    scale_fill_gradient(low = "#f7fbff", high = "#08306b") +
     labs(
-      title = "Mean error across noise and sparsity sweeps",
-      x = "Sweep level",
-      y = "Mean error",
-      colour = "Model"
+      title = "Mean error across noise and sparsity combinations",
+      x = "Noise standard deviation",
+      y = "Latent sparsity probability",
+      fill = "Mean error"
     ) +
     theme_minimal()
 
-  pause_and_store_plots(
+  joint_trend <- ggplot(
+    joint_means,
+    aes(
+      x = simulate.noise_std,
+      y = mean_value,
+      colour = factor(simulate.sparsity_prob)
+    )
+  ) +
+    geom_line() +
+    geom_point(size = 2) +
+    facet_grid(metric ~ analyze, scales = "free_y") +
+    labs(
+      title = "Mean error trends across joint sweeps",
+      x = "Noise standard deviation",
+      y = "Mean error",
+      colour = "Sparsity probability"
+    ) +
+    theme_minimal()
+
+  combined_plots <- c(
     per_factor_plots,
-    average_plot,
+    list(joint_heatmap = joint_heatmap)
+  )
+
+  pause_and_store_plots(
+    combined_plots,
+    joint_trend,
     output_dir,
     pause_seconds,
     display_plots,
     average_basename = "average_noise_sparsity"
   )
 
-  list(boxplots = per_factor_plots, average = average_plot)
+  list(
+    boxplots = per_factor_plots,
+    heatmap = joint_heatmap,
+    trend = joint_trend
+  )
 }
 
 #' Run a full DSC noise/sparsity analysis workflow.
