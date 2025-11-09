@@ -13,16 +13,16 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
+``a0, b0, c0, d0, e0, f0``
     Hyperparameters for the Gamma/Beta priors described in the model. Each
     defaults to 1.0, matching the values used by the corresponding analysis
     module.
-``noise_std`` (optional)
+``noise_std``
     Observation noise standard deviation. When provided the noise precision is
     not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
+``sparsity_prob``
     Probability that the shared Bernoulli switch is ``1`` (i.e. most features
     are active). When omitted the probability is sampled from the Beta prior
     defined by ``e0`` and ``f0``.
