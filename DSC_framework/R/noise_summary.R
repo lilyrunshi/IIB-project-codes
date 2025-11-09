@@ -619,25 +619,63 @@ plot_noise_sparsity_performance <- function(
 #' @return A list with the raw DSC tibble, per-factor summaries and the plot
 #'   objects produced during the workflow.
 run_noise_sparsity_analysis <- function(
-    dsc_path,
+    dsc_path = NULL,
+    dsc_table = NULL,
     pause_seconds = 0,
     output_root = "plot_outputs",
     display_plots = interactive()) {
-  if (!requireNamespace("dsc", quietly = TRUE)) {
-    stop("Package 'dsc' must be installed to query DSC outputs.")
+  if (!is.null(dsc_table)) {
+    dscout <- dsc_table
+  } else {
+    if (is.null(dsc_path)) {
+      stop(
+        "Either provide `dsc_table` with pre-loaded DSC results or specify `dsc_path`.",
+        call. = FALSE
+      )
+    }
+
+    message("Loading DSC outputs from: ", dsc_path)
+    query_fun <- tryCatch(
+      getExportedValue("dscrutils", "dscquery"),
+      error = function(e) {
+        stop(
+          paste0(
+            "Could not load dscrutils::dscquery(). Install the 'dscrutils' package and its ",
+            "dependencies or query the DSC results manually and supply them via the `dsc_table` ",
+            "argument. Original error: ",
+            conditionMessage(e)
+          ),
+          call. = FALSE
+        )
+      }
+    )
+
+    dscout <- tryCatch(
+      query_fun(
+        dsc.outdir = dsc_path,
+        targets = c(
+          "simulate.noise_std",
+          "simulate.sparsity_prob",
+          "analyze",
+          "rmse.error",
+          "mae.error"
+        )
+      ),
+      error = function(e) {
+        stop(
+          paste0(
+            "Failed to query DSC results via dscrutils::dscquery(). If the optional 'dsc' ",
+            "dependency is unavailable, run the query manually and pass the resulting tibble ",
+            "through the `dsc_table` argument. Original error: ",
+            conditionMessage(e)
+          ),
+          call. = FALSE
+        )
+      }
+    )
   }
 
-  message("Loading DSC outputs from: ", dsc_path)
-  dscout <- dsc::dscquery(
-    dsc.outdir = dsc_path,
-    targets = c(
-      "simulate.noise_std",
-      "simulate.sparsity_prob",
-      "analyze",
-      "rmse.error",
-      "mae.error"
-    )
-  )
+  
 
   if (!inherits(dscout, "tbl_df")) {
     dscout <- dplyr::as_tibble(dscout)
