@@ -166,6 +166,7 @@ check_single_factor_design <- function(annotated) {
             !near(simulate.noise_std, baseline_noise) &
             !near(simulate.sparsity_prob, baseline_sparsity)
         )
+
     )
 
   if (nrow(conflicting_rows) > 0) {
