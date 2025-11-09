@@ -157,17 +157,16 @@ check_single_factor_design <- function(annotated) {
   baseline_noise <- attr(annotated, "baseline_noise")
   baseline_sparsity <- attr(annotated, "baseline_sparsity")
 
-  conflicting_rows <- annotated %>%
-    filter(
-      sweep_factor == "multiple" |
-        (
-          !is.na(baseline_noise) & !is.na(baseline_sparsity) &
-            !is.na(simulate.noise_std) & !is.na(simulate.sparsity_prob) &
-            !near(simulate.noise_std, baseline_noise) &
-            !near(simulate.sparsity_prob, baseline_sparsity)
-        )
+  noise_differs <- !is.na(baseline_noise) & !is.na(annotated$simulate.noise_std) &
+    !dplyr::near(annotated$simulate.noise_std, baseline_noise)
+  sparsity_differs <- !is.na(baseline_sparsity) &
+    !is.na(annotated$simulate.sparsity_prob) &
+    !dplyr::near(annotated$simulate.sparsity_prob, baseline_sparsity)
 
-    )
+  conflict_mask <- noise_differs & sparsity_differs
+  conflict_mask[is.na(conflict_mask)] <- FALSE
+
+  conflicting_rows <- annotated[conflict_mask, , drop = FALSE]
 
   if (nrow(conflicting_rows) > 0) {
     stop(paste0(
