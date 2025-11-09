@@ -7,6 +7,7 @@
 # session stays tidy and reproducible.
 
 suppressPackageStartupMessages({
+  library(dscrutils)
   library(dplyr)
   library(tidyr)
   library(readr)
