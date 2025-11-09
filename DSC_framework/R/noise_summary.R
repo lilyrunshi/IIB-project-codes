@@ -159,12 +159,14 @@ check_single_factor_design <- function(annotated) {
 
   conflicting_rows <- annotated %>%
     filter(
-      sweep_factor == "multiple" || (
-        !is.na(baseline_noise) & !is.na(baseline_sparsity) &
-          !is.na(simulate.noise_std) & !is.na(simulate.sparsity_prob) &
-          !near(simulate.noise_std, baseline_noise) &
-          !near(simulate.sparsity_prob, baseline_sparsity)
-      )
+      sweep_factor == "multiple" |
+        (
+          !is.na(baseline_noise) & !is.na(baseline_sparsity) &
+            !is.na(simulate.noise_std) & !is.na(simulate.sparsity_prob) &
+            !near(simulate.noise_std, baseline_noise) &
+            !near(simulate.sparsity_prob, baseline_sparsity)
+        )
+
     )
 
   if (nrow(conflicting_rows) > 0) {
