@@ -1,0 +1,74 @@
+# Model and Script Reference
+
+This document summarises the purpose of every modelling module, supporting R
+script, and the DSC configuration used in the project.
+
+## DSC workflow (main.dsc)
+
+- `simulate` stage runs `model3_simulate`, generating design matrices and
+  responses under a learned group sparsity process while sweeping across noise
+  and sparsity grids specified in the DSC file.【F:DSC_framework/main.dsc†L21-L33】【F:DSC_framework/PY/model3_simulate.py†L1-L100】
+- `analyze` stage fans out seven Python modules that each fit a Bayesian linear
+  regression variant to the simulated data and emit predictions alongside a
+  serialisable summary of posterior parameters.【F:DSC_framework/main.dsc†L32-L74】
+- `score` stage evaluates each fit with percentage RMSE and MAE metrics, and the
+  pipeline replicates every configuration five times to quantify variability.【F:DSC_framework/main.dsc†L75-L94】
+
+## Simulation module
+
+- `model3_simulate.py` draws regression weights governed by a shared Bernoulli
+  switch, Gamma priors on weight and noise precisions, and an optional Beta prior
+  override for the sparsity probability.  It exposes NumPy arrays `x` and `y` plus
+  latent metadata for downstream inspection.【F:DSC_framework/PY/model3_simulate.py†L1-L100】
+
+## Analysis modules (Python)
+
+- `model_1a_bayesian_regression_shared_prior.py` – wraps scikit-learn’s
+  `BayesianRidge`, sharing a single precision parameter across weights and
+  reporting fitted coefficients, intercept, and precision estimates.【F:DSC_framework/models/model_1a_bayesian_regression_shared_prior.py†L1-L14】
+- `model_1b_bayesian_regression_with_ard.py` – leverages ARD regression so each
+  weight obtains its own precision, capturing automatic relevance determination
+  behaviour in the exported diagnostics.【F:DSC_framework/models/model_1b_bayesian_regression_with_ard.py†L1-L14】
+- `model_2_bayesian_regression_group_switch.py` – implements a variational update
+  scheme where a latent Bernoulli switch toggles an entire regression component,
+  iteratively refining posterior expectations for shared precisions and the switch
+  probability before producing scaled predictions.【F:DSC_framework/models/model_2_bayesian_regression_group_switch.py†L1-L104】
+- `model_3_bayesian_regression_learned_group_sparsity.py` – extends the group
+  switch idea by learning the Bernoulli probability through Beta updates while
+  maintaining shared precisions, emitting posterior moments for the probability
+  and weight distributions.【F:DSC_framework/models/model_3_bayesian_regression_learned_group_sparsity.py†L1-L132】
+- `model_4_reparameterized_regression.py` – realises the reparameterised Model 4
+  from the original study, coupling the weight and observation precisions in a
+  coordinated variational loop prior to returning mean predictions.【F:DSC_framework/models/model_4_reparameterized_regression.py†L1-L89】
+- `model_6_spike_and_slab_shared_precision.py` – approximates a spike-and-slab
+  prior with shared spike precision, alternating between slab, spike, and noise
+  updates while tracking posterior odds for the inclusion probability.【F:DSC_framework/models/model_6_spike_and_slab_shared_precision.py†L1-L181】
+- `model_7_spike_and_slab_ard_precision.py` – introduces ARD-style precisions in
+  the spike-and-slab hierarchy so each coefficient has its own slab precision,
+  again updating the inclusion probability and posterior statistics iteratively.【F:DSC_framework/models/model_7_spike_and_slab_ard_precision.py†L1-L162】
+
+## Scoring modules (Python)
+
+- `rmse.py` – computes the root mean squared percentage error by scaling residuals
+  against the larger magnitude between truth and prediction per observation.【F:DSC_framework/PY/rmse.py†L1-L13】
+- `mae.py` – computes the mean absolute percentage error using the same scaling
+  strategy to remain stable around zero crossings.【F:DSC_framework/PY/mae.py†L1-L14】
+
+## R summarisation and visualisation scripts
+
+- `noise_summary.R` – loads DSC outputs (via `dscrutils::dscquery` when available),
+  coerces noise/sparsity sweeps into numeric tibbles, computes grouped statistics,
+  and renders boxplots, trend lines, and heatmaps for noise-only, sparsity-only,
+  and joint sweeps.  The `run_noise_sparsity_analysis` wrapper bundles these steps
+  and writes plots to `plot_outputs/` directories.【F:DSC_framework/R/noise_summary.R†L1-L624】【F:DSC_framework/R/noise_summary.R†L640-L745】
+- `prediction_curves.R` – requires `reticulate` to read the pickle files emitted
+  by DSC, then overlays per-model prediction curves on top of the simulated
+  observations for each replicate, saving PNGs that embed the noise and sparsity
+  metadata in their filenames.【F:DSC_framework/R/prediction_curves.R†L1-L311】
+
+## Stand-alone synthetic data utilities
+
+- `SyntheticData.py` – supplies methods for building oscillatory feature matrices
+  with harmonic groupings, optional spline waveforms, additive noise corruption,
+  and plotting helpers used in the exploratory Python scripts outside DSC.【F:SyntheticData.py†L6-L224】
+
