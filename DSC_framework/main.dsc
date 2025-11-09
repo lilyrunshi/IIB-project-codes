@@ -91,3 +91,4 @@ DSC:
   run: simulate * analyze * score
   output: dsc_result
   exec_path: PY, models
+  replicate: 5

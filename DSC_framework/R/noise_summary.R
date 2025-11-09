@@ -7,6 +7,7 @@
 # session stays tidy and reproducible.
 
 suppressPackageStartupMessages({
+  library(dscrutils)
   library(dplyr)
   library(tidyr)
   library(readr)
@@ -605,17 +606,9 @@ plot_noise_sparsity_performance <- function(
 #' load the required packages, query the DSC output, produce tidy summaries and
 #' generate the standard plots.  It returns a list so you can inspect both the
 #' summaries and the `ggplot` objects programmatically.
-#' 
-#' When `dsc_path` is provided the helper attempts to call
-#' `dscrutils::dscquery()`.  If the `dscrutils` package (or its optional `dsc`
-#' dependency) is not available, query the DSC results manually and pass the
-#' tibble via `dsc_table` instead.
 #'
 #' @param dsc_path Path to the DSC run directory (the folder that contains the
-#'   `dsc-result.rds` file).  Leave as `NULL` when providing `dsc_table`.
-#' @param dsc_table Optional tibble that already contains the queried DSC
-#'   results.  Supply this when you want to manage querying manually (e.g. to
-#'   avoid optional dependencies).
+#'   `dsc-result.rds` file).
 #' @param pause_seconds Seconds to wait between plot renders.  Defaults to 0 so
 #'   scripted runs finish quickly.
 #' @param output_root Base directory where the noise/sparsity plots should be
@@ -681,6 +674,8 @@ run_noise_sparsity_analysis <- function(
       }
     )
   }
+
+  
 
   if (!inherits(dscout, "tbl_df")) {
     dscout <- dplyr::as_tibble(dscout)
