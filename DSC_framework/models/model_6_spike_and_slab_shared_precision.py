@@ -178,4 +178,6 @@ fit = {
     "E_log_beta": float(E_log_beta),
     "E_log_alpha": float(E_log_alpha),
     "E_log_s0": float(E_log_s0),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }

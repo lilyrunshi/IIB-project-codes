@@ -22,12 +22,19 @@
 # Simulate data from Model 3 (learned group sparsity)
 model3_simulate: model3_simulate.py
   n: 200         # samples
-  d: 20          # features
+  d: 3           # sinusoidal features (sin, cos, intercept)
   seed: 8675309  # reproducibility for the latent draws
+  a0: 1.5        # prior shape for coefficient precision
+  b0: 0.75       # prior rate for coefficient precision
+  c0: 3.0        # prior shape for observation precision
+  d0: 1.0        # prior rate for observation precision
+  e0: 4.0        # prior alpha for sparsity probability
+  f0: 1.0        # prior beta for sparsity probability
   noise_std: 0.2, 0.5, 1.0  # explore different observation noise levels
   sparsity_prob: 0.2, 0.5, 0.8  # probe a range of latent sparsity levels
   $x: x
   $y: y
+  $w_true: w_true
 
 # --- analyze (complex: separate Python files) ---
 model1a: model_1a_bayesian_regression_shared_prior.py
@@ -74,13 +81,13 @@ model7: model_7_spike_and_slab_ard_precision.py
 
 # --- score (no access to true underlying coefs; fit quality only) ---
 rmse: rmse.py
-  y_true: $y
-  y_pred: $y_hat
+  w_true: $w_true
+  fit: $fit
   $error: e
 
 mae: mae.py
-  y_true: $y
-  y_pred: $y_hat
+  w_true: $w_true
+  fit: $fit
   $error: e
 
 DSC:

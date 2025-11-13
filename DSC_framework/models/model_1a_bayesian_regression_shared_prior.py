@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.linear_model import BayesianRidge
 
 # inputs: x, y
-br = BayesianRidge(compute_score=False)
+br = BayesianRidge(compute_score=False, fit_intercept=False)
 br.fit(x, y)
 
 y_hat = br.predict(x)
@@ -11,5 +11,7 @@ fit = {
     "intercept_": float(br.intercept_),
     "alpha_noise_": float(br.alpha_),   # noise precision
     "lambda_weights_": float(br.lambda_),  # weights precision
+    "w_mean": br.coef_.tolist(),
+    "w_cov": br.sigma_.tolist(),
 }
 

@@ -129,4 +129,6 @@ fit = {
     "e_N": float(e_N),
     "f_N": float(f_N),
     "pi_mean": float(pi_mean),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
