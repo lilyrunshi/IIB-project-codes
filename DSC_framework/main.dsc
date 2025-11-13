@@ -24,14 +24,12 @@ model3_simulate: model3_simulate.py
   n: 200         # samples
   d: 3           # sinusoidal features (sin, cos, intercept)
   seed: 8675309  # reproducibility for the latent draws
-  a0: 1.5        # prior shape for coefficient precision
-  b0: 0.75       # prior rate for coefficient precision
-  c0: 0.2        # prior shape for observation precision
-  d0: 0.5        # prior rate for observation precision
-  e0: 4.0        # prior alpha for sparsity probability
-  f0: 1.0        # prior beta for sparsity probability
-  noise_std: 0.2, 0.5, 1.0  # explore different observation noise levels
-  sparsity_prob: 0.2, 0.5, 0.8  # probe a range of latent sparsity levels
+  a0: 3.0        # prior shape for coefficient precision (E[alpha] = 1)
+  b0: 3.0        # prior rate for coefficient precision
+  c0: 5.0        # prior shape for observation precision (E[β^{-1}] ≈ 0.1)
+  d0: 0.4        # prior rate for observation precision
+  e0: 8.0        # prior alpha for sparsity probability (mean 0.8)
+  f0: 2.0        # prior beta for sparsity probability
   $x: x
   $y: y
   $w_true: w_true

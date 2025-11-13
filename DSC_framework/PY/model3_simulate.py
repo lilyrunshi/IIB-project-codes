@@ -16,17 +16,18 @@ expects the following variables to be defined in the global namespace:
 ``seed``
     Seed for the random number generator to ensure reproducibility.
 ``a0, b0, c0, d0, e0, f0``
-    Hyperparameters for the Gamma/Beta priors described in the model. These are
-    supplied explicitly in ``main.dsc`` (values tuned to 1.5, 0.75, 3.0, 1.0,
-    4.0, 1.0) to emphasise rhythmic features in the simulated data while
-    remaining compatible with the analysis module.
-``noise_std``
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob``
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
 consumed by downstream DSC stages along with ``w_true`` containing the
@@ -100,17 +101,28 @@ def plot_generated_data(time_points, observations, signal=None, filename=None):
 
 
 
-pi = float(sparsity_prob)
 # Sample global latent variables from their respective priors.
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-beta = 1.0 / (noise_std ** 2)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+
+# Compute the observation noise scale as the expectation of β^{-1} when
+# β ~ Gamma(c0, d0). Under the (shape, rate) parameterisation this equals
+# d0 / (c0 - 1).
+expected_inv_beta = d0 / (c0 - 1.0)
+noise_std = expected_inv_beta
 
 # Bernoulli switch shared by the sinusoidal features; the intercept remains on.
-gamma_switch = rng.binomial(1, pi)
+omega_switch = rng.binomial(1, pi)
 
 # Draw regression weights for the sinusoidal basis and apply the switch.
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.array([gamma_switch, gamma_switch, 1.0])
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
 
 # Generate sampling times and the corresponding design matrix.
 time_points = rng.uniform(low=0.0, high=1.0, size=n)
@@ -130,8 +142,10 @@ w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": w_true.tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
     "time": time_points.tolist(),
 }
