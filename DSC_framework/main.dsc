@@ -33,6 +33,8 @@ model3_simulate: model3_simulate.py
   $x: x
   $y: y
   $w_true: w_true
+  $noise_std: noise_std
+  $sparsity_prob: sparsity_prob
 
 # --- analyze (complex: separate Python files) ---
 model1a: model_1a_bayesian_regression_shared_prior.py
