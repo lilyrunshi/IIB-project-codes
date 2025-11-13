@@ -85,5 +85,7 @@ fit = {
     "d_N": float(d_N),
     "E_alpha": float(E_alpha),
     "E_beta": float(E_beta),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 

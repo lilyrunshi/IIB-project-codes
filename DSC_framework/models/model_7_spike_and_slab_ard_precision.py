@@ -159,4 +159,6 @@ fit = {
     "pi_mean": float(pi_mean),
     "E_log_beta": float(E_log_beta),
     "E_log_alpha": E_log_alpha.tolist(),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
