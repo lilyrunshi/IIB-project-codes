@@ -115,7 +115,8 @@ if c0 <= 1.0:
 # β ~ Gamma(c0, d0). Under the (shape, rate) parameterisation this equals
 # d0 / (c0 - 1).
 expected_inv_beta = d0 / (c0 - 1.0)
-noise_std = expected_inv_beta
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
 
 # Bernoulli switch shared by the sinusoidal features; the intercept remains on.
 omega_switch = rng.binomial(1, pi)
@@ -144,6 +145,7 @@ latent = {
     "beta": float(beta),
     "expected_inv_beta": float(expected_inv_beta),
     "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
     "omega_switch": int(omega_switch),
     "weights": w_true.tolist(),
