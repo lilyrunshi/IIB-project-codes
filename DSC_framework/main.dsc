@@ -26,8 +26,8 @@ model3_simulate: model3_simulate.py
   seed: 8675309  # reproducibility for the latent draws
   a0: 1.5        # prior shape for coefficient precision
   b0: 0.75       # prior rate for coefficient precision
-  c0: 3.0        # prior shape for observation precision
-  d0: 1.0        # prior rate for observation precision
+  c0: 0.2        # prior shape for observation precision
+  d0: 0.5        # prior rate for observation precision
   e0: 4.0        # prior alpha for sparsity probability
   f0: 1.0        # prior beta for sparsity probability
   noise_std: 0.2, 0.5, 1.0  # explore different observation noise levels
@@ -98,4 +98,4 @@ DSC:
   run: simulate * analyze * score
   output: dsc_result
   exec_path: PY, models
-  replicate: 5
+  replicate: 1
