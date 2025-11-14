@@ -200,8 +200,6 @@ extract_weight_vector <- function(fit_obj, n_features) {
 #' Collect prediction curves for every simulation replicate.
 #' 
 #' @param dsc_path Path to the DSC output directory (default ``"dsc_result"``).
-#' @param feature_index Column from ``simulate.x`` to use as the x-axis when the
-#'   simulated covariates are stored as a matrix. Defaults to the first column.
 #' @param pause_seconds Optional pause between rendering/saving successive plots.
 #' @param output_dir Directory used to store generated figures. Set to ``NULL``
 #'   to skip saving.
@@ -213,7 +211,6 @@ extract_weight_vector <- function(fit_obj, n_features) {
 #'   objects for each replicate that could be processed.
 plot_prediction_curves <- function(
     dsc_path = "dsc_result",
-    feature_index = 1L,
     pause_seconds = 0,
     output_dir = file.path("plot_outputs", "predictions"),
     display_plots = interactive(),
