@@ -80,8 +80,125 @@ format_for_filename <- function(x) {
   gsub("\\.", "_", format(x, trim = TRUE, scientific = FALSE))
 }
 
-#' Collect prediction curves for every simulation replicate.
+#' Compute the noise-free signal for a simulation replicate when available.
 #'
+#' @param sim_obj List produced by ``model3_simulate`` containing the exported
+#'   arrays.
+#' @param design_matrix Numeric matrix of covariates for the replicate.
+#' @return Numeric vector representing the latent signal or ``NULL`` when it
+#'   cannot be recovered.
+compute_simulation_signal <- function(sim_obj, design_matrix) {
+  if (!is.null(sim_obj$signal)) {
+    signal <- as.numeric(sim_obj$signal)
+    return(signal)
+  }
+
+  if (!is.null(sim_obj$w_true)) {
+    w_true <- as.numeric(sim_obj$w_true)
+    if (!is.null(design_matrix) && length(w_true) == ncol(design_matrix)) {
+      return(as.numeric(design_matrix %*% w_true))
+    }
+  }
+
+  latent <- sim_obj$latent %||% NULL
+  if (!is.null(latent) && !is.null(latent$weights)) {
+    weights <- as.numeric(latent$weights)
+    if (!is.null(design_matrix) && length(weights) == ncol(design_matrix)) {
+      return(as.numeric(design_matrix %*% weights))
+    }
+  }
+
+  NULL
+}
+
+#' Extract the time axis used by the simulation.
+#'
+#' @param sim_obj Simulation output list.
+#' @param n_obs Number of observations in the replicate.
+#' @return Numeric vector of length ``n_obs`` describing the sampling locations.
+extract_time_values <- function(sim_obj, n_obs, design_matrix = NULL, feature_index = 1L) {
+  candidates <- list(sim_obj$time_points, sim_obj$time, sim_obj$times, sim_obj$t)
+
+  dsc_time <- tryCatch(sim_obj$DSC_DEBUG$time, error = function(...) NULL)
+  if (!is.null(dsc_time) && length(dsc_time) == n_obs) {
+    candidates <- c(list(dsc_time), candidates)
+  }
+
+  for (candidate in candidates) {
+    if (!is.null(candidate)) {
+      candidate_vec <- as.numeric(candidate)
+      if (length(candidate_vec) == n_obs) {
+        return(candidate_vec)
+      }
+    }
+  }
+
+  if (!is.null(design_matrix) && is.matrix(design_matrix) && ncol(design_matrix) >= feature_index) {
+    candidate <- design_matrix[, feature_index]
+    candidate_vec <- as.numeric(candidate)
+    if (length(candidate_vec) == n_obs) {
+      return(candidate_vec)
+    }
+  }
+
+  seq_len(n_obs)
+}
+
+#' Retrieve the fitted coefficient vector from an analysis module output.
+#'
+#' @param fit_obj The ``fit`` element loaded from a DSC analysis pickle file.
+#' @param n_features Number of columns in the design matrix.
+#' @return Numeric vector of length ``n_features`` or ``NULL`` if it cannot be
+#'   extracted.
+extract_weight_vector <- function(fit_obj, n_features) {
+  if (is.null(fit_obj) || !length(fit_obj)) {
+    return(NULL)
+  }
+
+  candidate_names <- c(
+    "w_mean",
+    "weights_mean",
+    "weights_posterior_mean",
+    "weights_map",
+    "m_N",
+    "coef_",
+    "weights"
+  )
+
+  weights <- NULL
+  for (name in candidate_names) {
+    if (!is.null(fit_obj[[name]])) {
+      candidate <- fit_obj[[name]]
+      candidate <- if (is.list(candidate)) unlist(candidate, use.names = FALSE) else candidate
+      candidate <- as.numeric(candidate)
+      if (length(candidate) > 0L) {
+        weights <- candidate
+        break
+      }
+    }
+  }
+
+  if (is.null(weights)) {
+    return(NULL)
+  }
+
+  if (!is.null(fit_obj$intercept_) && length(weights) < n_features) {
+    weights <- c(weights, as.numeric(fit_obj$intercept_))
+  }
+
+  if (length(weights) > n_features) {
+    weights <- weights[seq_len(n_features)]
+  }
+
+  if (length(weights) != n_features) {
+    return(NULL)
+  }
+
+  weights
+}
+
+#' Collect prediction curves for every simulation replicate.
+#' 
 #' @param dsc_path Path to the DSC output directory (default ``"dsc_result"``).
 #' @param feature_index Column from ``simulate.x`` to use as the x-axis when the
 #'   simulated covariates are stored as a matrix. Defaults to the first column.
@@ -107,6 +224,10 @@ plot_prediction_curves <- function(
   }
   pause_seconds <- max(0, pause_seconds %||% 0)
   display_plots <- isTRUE(display_plots)
+  feature_index <- as.integer(feature_index %||% 1L)
+  if (is.na(feature_index) || feature_index < 1L) {
+    feature_index <- 1L
+  }
 
   dsc_path <- normalizePath(dsc_path, winslash = "/", mustWork = TRUE)
   simulate_dir <- file.path(dsc_path, "model3_simulate")
@@ -152,41 +273,33 @@ plot_prediction_curves <- function(
       next
     }
 
-    if (is.matrix(x)) {
-      if (feature_index > ncol(x)) {
-        warning(
-          sprintf(
-            "feature_index (%d) exceeds the number of columns (%d) in '%s'; skipping replicate.",
-            feature_index,
-            ncol(x),
-            basename(sim_path)
-          )
-        )
-        next
-      }
-      x_vals <- x[, feature_index]
-    } else if (is.null(x)) {
-      x_vals <- seq_along(y)
-    } else {
-      x_vals <- as.numeric(x)
+    design_matrix <- if (is.null(x)) NULL else as.matrix(x)
+    if (is.null(design_matrix)) {
+      warning("Simulation output at ", sim_path, " did not contain an 'x' matrix; skipping.")
+      next
     }
 
-    if (length(x_vals) != length(y)) {
+    if (nrow(design_matrix) != length(y)) {
       warning(
         sprintf(
-          "Length mismatch between x (length %d) and y (length %d) in '%s'; using sample index instead.",
-          length(x_vals),
+          "Design matrix row count (%d) did not match length of y (%d) in '%s'; skipping replicate.",
+          nrow(design_matrix),
           length(y),
           basename(sim_path)
         )
       )
-      x_vals <- seq_along(y)
+      next
     }
 
     replicate_id <- if (!is.null(meta$replicate)) meta$replicate else NA_integer_
     if (!is.null(replicates) && !is.na(replicate_id) && !(replicate_id %in% replicates)) {
       next
     }
+
+    time_vals <- extract_time_values(sim_obj, length(y), design_matrix, feature_index)
+    order_idx <- order(time_vals)
+
+    signal_vec <- compute_simulation_signal(sim_obj, design_matrix)
 
     script <- if (!is.null(meta$script)) meta$script else ""
     noise <- extract_script_param(script, "noise_std")
@@ -203,11 +316,24 @@ plot_prediction_curves <- function(
 
     observation_df <- data.frame(
       sample = seq_along(y),
-      x_value = as.numeric(x_vals),
+      x_value = as.numeric(time_vals),
       y = as.numeric(y)
     )
 
-    prediction_df <- NULL
+    if (!is.null(signal_vec) && length(signal_vec) == nrow(design_matrix)) {
+      observation_df$signal <- as.numeric(signal_vec)
+      signal_df <- data.frame(
+        sample = observation_df$sample,
+        x_value = observation_df$x_value,
+        signal = observation_df$signal
+      )
+      signal_df <- signal_df[order_idx, , drop = FALSE]
+    } else {
+      signal_df <- NULL
+    }
+
+    prediction_list <- list()
+    weight_records <- list()
     for (module in analyze_dirs) {
       pred_path <- file.path(
         dsc_path,
@@ -223,17 +349,25 @@ plot_prediction_curves <- function(
         warning("Failed to read ", pred_path, ": ", conditionMessage(pred_obj))
         next
       }
-      if (is.null(pred_obj$y_hat)) {
-        warning("Model output at ", pred_path, " did not contain 'y_hat'; skipping.")
+      fit_obj <- pred_obj$fit %||% NULL
+      if (is.null(fit_obj)) {
+        warning("Model output at ", pred_path, " did not contain a 'fit' object; skipping.")
         next
       }
 
-      if (length(pred_obj$y_hat) != nrow(observation_df)) {
+      weights <- extract_weight_vector(fit_obj, ncol(design_matrix))
+      if (is.null(weights)) {
+        warning("Could not extract coefficient vector for ", pred_path, "; skipping.")
+        next
+      }
+
+      module_prediction <- as.numeric(design_matrix %*% weights)
+      if (length(module_prediction) != nrow(observation_df)) {
         warning(
           sprintf(
-            "Prediction length mismatch for %s (got %d, expected %d); skipping.",
+            "Derived prediction length mismatch for %s (got %d, expected %d); skipping.",
             basename(pred_path),
-            length(pred_obj$y_hat),
+            length(module_prediction),
             nrow(observation_df)
           )
         )
@@ -241,14 +375,17 @@ plot_prediction_curves <- function(
       }
 
       module_df <- data.frame(
-        sample = seq_along(pred_obj$y_hat),
+        sample = observation_df$sample,
         x_value = observation_df$x_value,
         model = module,
-        prediction = as.numeric(pred_obj$y_hat)
+        prediction = module_prediction
       )
-      prediction_df <- if (is.null(prediction_df)) module_df else rbind(prediction_df, module_df)
+      module_df <- module_df[order_idx, , drop = FALSE]
+      prediction_list[[module]] <- module_df
+      weight_records[[module]] <- weights
     }
 
+    prediction_df <- if (length(prediction_list)) do.call(rbind, prediction_list) else NULL
     if (is.null(prediction_df)) {
       warning("No predictions found for replicate ", base_name, "; skipping plot.")
       next
@@ -263,17 +400,34 @@ plot_prediction_curves <- function(
       if (is.na(sparsity)) "?" else format(sparsity, digits = 3, trim = TRUE)
     )
 
-    p <- ggplot(observation_df, aes(x = x_value, y = y)) +
-      geom_point(colour = "black", alpha = 0.6, size = 1.2) +
-      geom_line(
-        data = prediction_df,
-        aes(x = x_value, y = prediction, colour = model, group = model),
-        linewidth = 0.7,
-        alpha = 0.9
-      ) +
+    p <- ggplot() +
+      geom_point(
+        data = observation_df,
+        aes(x = x_value, y = y),
+        colour = "black",
+        alpha = 0.6,
+        size = 1.2
+      )
+
+    if (!is.null(signal_df)) {
+      p <- p + geom_line(
+        data = signal_df,
+        aes(x = x_value, y = signal),
+        colour = "black",
+        linewidth = 1.0,
+        alpha = 0.8
+      )
+    }
+
+    p <- p + geom_line(
+      data = prediction_df,
+      aes(x = x_value, y = prediction, colour = model, group = model),
+      linewidth = 0.7,
+      alpha = 0.9
+    ) +
       labs(
         title = plot_title,
-        x = "Simulated covariate",
+        x = "Time",
         y = "Response",
         colour = "Model"
       ) +
@@ -299,6 +453,8 @@ plot_prediction_curves <- function(
       plot = p,
       observations = observation_df,
       predictions = prediction_df,
+      signal = signal_df,
+      weights = weight_records,
       metadata = list(
         replicate = replicate_id,
         noise_std = noise,
