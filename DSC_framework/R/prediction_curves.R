@@ -111,61 +111,12 @@ compute_simulation_signal <- function(sim_obj, design_matrix) {
   NULL
 }
 
-#' Attempt to reconstruct the simulation time axis when the covariate matrix
-#' encodes sinusoidal features.
-#'
-#' For ``model3_simulate`` the design matrix typically comprises sine and cosine
-#' evaluations at a grid of time points (with an optional intercept column).
-#' When explicit time values are unavailable we can recover them via the
-#' two-argument arctangent and normalise them to ``[0, 2\pi)`` so that ordering
-#' reproduces the trajectory used during simulation.
-#'
-#' @param design_matrix Numeric design matrix.
-#' @return Numeric vector of inferred time values or ``NULL`` if the structure
-#'   does not resemble a sinusoidal design.
-infer_time_from_trig_design <- function(design_matrix) {
-  if (is.null(design_matrix) || !is.matrix(design_matrix) || ncol(design_matrix) < 2L) {
-    return(NULL)
-  }
-
-  column_names <- tolower(colnames(design_matrix) %||% character())
-  sin_idx <- which(grepl("sin", column_names, fixed = TRUE))
-  cos_idx <- which(grepl("cos", column_names, fixed = TRUE))
-
-  if (length(sin_idx) == 1L && length(cos_idx) == 1L) {
-    sin_vals <- as.numeric(design_matrix[, sin_idx])
-    cos_vals <- as.numeric(design_matrix[, cos_idx])
-  } else {
-    sin_vals <- as.numeric(design_matrix[, 1L])
-    cos_vals <- as.numeric(design_matrix[, 2L])
-  }
-
-  if (length(sin_vals) != nrow(design_matrix) || length(cos_vals) != nrow(design_matrix)) {
-    return(NULL)
-  }
-
-  radius <- sqrt(sin_vals^2 + cos_vals^2)
-  if (any(!is.finite(radius))) {
-    return(NULL)
-  }
-
-  radius_sd <- stats::sd(radius)
-  if (!is.finite(radius_sd) || radius_sd > 5e-3) {
-    return(NULL)
-  }
-
-  time_vals <- atan2(sin_vals, cos_vals)
-  normalised <- (time_vals + 2 * pi) %% (2 * pi)
-  normalised / (2 * pi)
-}
-
 #' Extract the time axis used by the simulation.
-#' 
+#'
 #' @param sim_obj Simulation output list.
 #' @param n_obs Number of observations in the replicate.
-#' @return Numeric vector of length ``n_obs`` describing the sampling locations
-#'   or ``NULL`` when they cannot be inferred.
-extract_time_values <- function(sim_obj, n_obs, design_matrix = NULL) {
+#' @return Numeric vector of length ``n_obs`` describing the sampling locations.
+extract_time_values <- function(sim_obj, n_obs, design_matrix = NULL, feature_index = 1L) {
   candidates <- list(sim_obj$time_points, sim_obj$time, sim_obj$times, sim_obj$t)
 
   dsc_time <- tryCatch(sim_obj$DSC_DEBUG$time, error = function(...) NULL)
@@ -182,12 +133,15 @@ extract_time_values <- function(sim_obj, n_obs, design_matrix = NULL) {
     }
   }
 
-  trig_time <- infer_time_from_trig_design(design_matrix)
-  if (!is.null(trig_time) && length(trig_time) == n_obs) {
-    return(trig_time)
+  if (!is.null(design_matrix) && is.matrix(design_matrix) && ncol(design_matrix) >= feature_index) {
+    candidate <- design_matrix[, feature_index]
+    candidate_vec <- as.numeric(candidate)
+    if (length(candidate_vec) == n_obs) {
+      return(candidate_vec)
+    }
   }
 
-  NULL
+  seq_len(n_obs)
 }
 
 #' Retrieve the fitted coefficient vector from an analysis module output.
@@ -267,6 +221,10 @@ plot_prediction_curves <- function(
   }
   pause_seconds <- max(0, pause_seconds %||% 0)
   display_plots <- isTRUE(display_plots)
+  feature_index <- as.integer(feature_index %||% 1L)
+  if (is.na(feature_index) || feature_index < 1L) {
+    feature_index <- 1L
+  }
 
   dsc_path <- normalizePath(dsc_path, winslash = "/", mustWork = TRUE)
   simulate_dir <- file.path(dsc_path, "model3_simulate")
@@ -335,16 +293,8 @@ plot_prediction_curves <- function(
       next
     }
 
-    time_vals <- extract_time_values(sim_obj, length(y), design_matrix)
-    if (is.null(time_vals)) {
-      warning(
-        "Unable to determine time axis for replicate ",
-        basename(sim_path),
-        "; skipping."
-      )
-      next
-    }
-    order_idx <- order(time_vals, seq_along(time_vals))
+    time_vals <- extract_time_values(sim_obj, length(y), design_matrix, feature_index)
+    order_idx <- order(time_vals)
 
     signal_vec <- compute_simulation_signal(sim_obj, design_matrix)
 
