@@ -27,7 +27,7 @@ assumptions across controlled noise and sparsity sweeps.【F:DSC_framework/main.
   models.【F:DSC_framework/R/noise_summary.R†L1-L200】【F:DSC_framework/R/noise_summary.R†L320-L624】【F:DSC_framework/R/noise_summary.R†L640-L745】
 - `DSC_framework/R/prediction_curves.R` – visualisation utilities that read the
   pickle artefacts emitted by DSC and overlay fitted curves with the simulated
-  observations for each replicate.【F:DSC_framework/R/prediction_curves.R†L1-L311】
+  observations for each replicate.【F:DSC_framework/R/prediction_curves.R†L1-L432】
 - `SyntheticData.py` – stand-alone class for constructing oscillatory synthetic
   datasets with optional spline waveforms, additive noise, and plotting
   helpers used by the exploratory notebooks/scripts outside the DSC
@@ -67,7 +67,7 @@ install.packages(c("dplyr", "tidyr", "ggplot2", "readr"))
 ```
 
 `prediction_curves.R` additionally requires `reticulate` to load the pickle
-files written by Python modules.【F:DSC_framework/R/prediction_curves.R†L1-L311】
+files written by Python modules.【F:DSC_framework/R/prediction_curves.R†L36-L141】
 
 ## Running the DSC pipeline
 
@@ -98,11 +98,11 @@ them).  The folder structure mirrors the module names defined in `main.dsc`.
 - To visualise fitted curves for individual replicates, run:
   ```r
   source("R/prediction_curves.R")
-  plots <- plot_prediction_curves(dsc_path = "dsc_result")
+  plots <- plot_model3_signal_predictions(dsc_path = "dsc_result")
   ```
   Each plot overlays the simulated observations with model-specific prediction
   lines, with filenames encoding the noise and sparsity settings for easy
-  navigation.【F:DSC_framework/R/prediction_curves.R†L83-L311】
+  navigation.【F:DSC_framework/R/prediction_curves.R†L242-L431】
 
 ## Extending the workflow
 
