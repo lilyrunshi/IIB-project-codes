@@ -2761,12 +2761,19 @@ Prism.languages.yaml={scalar:{pattern:/([\-:]\s*(![^\s]+)?[ \t]*[|>])[ \t]*(?:((
 # Simulate data from Model 3 (learned group sparsity)
 model3_simulate: model3_simulate.py
   n: 200         # samples
-  d: 20          # features
+  d: 3           # sinusoidal features (sin, cos, intercept)
   seed: 8675309  # reproducibility for the latent draws
-  noise_std: 0.2, 0.5, 1.0  # explore different observation noise levels
-  sparsity_prob: 0.2, 0.5, 0.8  # probe a range of latent sparsity levels
+  a0: 3.0        # prior shape for coefficient precision (E[alpha] = 1)
+  b0: 3.0        # prior rate for coefficient precision
+  c0: 5.0        # prior shape for observation precision (E[β^{-1}] ≈ 0.1)
+  d0: 0.4        # prior rate for observation precision
+  e0: 8.0        # prior alpha for sparsity probability (mean 0.8)
+  f0: 2.0        # prior beta for sparsity probability
   $x: x
   $y: y
+  $w_true: w_true
+  $noise_std: noise_std
+  $sparsity_prob: sparsity_prob
 # --- analyze (complex: separate Python files) ---
 model1a: model_1a_bayesian_regression_shared_prior.py
   x: $x
@@ -2805,12 +2812,12 @@ model7: model_7_spike_and_slab_ard_precision.py
   $y_hat: y_hat
 # --- score (no access to true underlying coefs; fit quality only) ---
 rmse: rmse.py
-  y_true: $y
-  y_pred: $y_hat
+  w_true: $w_true
+  fit: $fit
   $error: e
 mae: mae.py
-  y_true: $y
-  y_pred: $y_hat
+  w_true: $w_true
+  fit: $fit
   $error: e
 DSC:
   define:
@@ -2820,6 +2827,7 @@ DSC:
   run: simulate * analyze * score
   output: dsc_result
   exec_path: PY, models
+  replicate: 1
 </code></pre></div></div>
 <table>
     <tr>
@@ -2834,9 +2842,9 @@ DSC:
     </tr>
     <tr>
         <td>model3_simulate</td>
-        <td>d, n, noise_std, seed, sparsity_prob</td>
+        <td>a0, b0, c0, d, d0, e0, f0, n, seed</td>
         <td></td>
-        <td>x, y</td>
+        <td>noise_std, sparsity_prob, w_true, x, y</td>
         <td>PY</td>
     </tr>
 </table><hr><table>
@@ -2913,14 +2921,14 @@ DSC:
     <tr>
         <td>mae</td>
         <td></td>
-        <td>y, y_hat</td>
+        <td>fit, w_true</td>
         <td>error</td>
         <td>PY</td>
     </tr>
     <tr>
         <td>rmse</td>
         <td></td>
-        <td>y, y_hat</td>
+        <td>fit, w_true</td>
         <td>error</td>
         <td>PY</td>
     </tr>
@@ -2931,12 +2939,12 @@ DSC:
 <div id=model3_simulate-model1a-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model1a-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model1a-mae_model1a-model_1a_bayesian_regression_shared_priorpy-450a73d2">model1a (model_1a_bayesian_regression_shared_prior.py 450a73d2)</a></li>
-<li><a href="#model3_simulate-model1a-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
+<li class="active"><a href="#model3_simulate-model1a-mae_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model1a-mae_model1a-model_1a_bayesian_regression_shared_priorpy-1b1a8a4b">model1a (model_1a_bayesian_regression_shared_prior.py 1b1a8a4b)</a></li>
+<li><a href="#model3_simulate-model1a-mae_mae-maepy-edc6f183">mae (mae.py edc6f183)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model1a-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model1a-mae_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -2951,89 +2959,193 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model1a-mae_model1a-model_1a_bayesian_regression_shared_priorpy-450a73d2" class="tab">
+<div id="model3_simulate-model1a-mae_model1a-model_1a_bayesian_regression_shared_priorpy-1b1a8a4b" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
-from sklearn.linear_model import BayesianRidge
-br = BayesianRidge(compute_score=False)
-br.fit(x, y)
-y_hat = br.predict(x)
+def _ensure_2d_column(vector):
+    arr = np.asarray(vector)
+    if arr.ndim == 1:
+        arr = arr[:, None]
+    return arr
+X = np.asarray(x)
+y = _ensure_2d_column(y)
+N, M = X.shape
+a0 = 1.0
+b0 = 1.0
+c0 = 1.0
+d0 = 1.0
+max_iter = 500
+rtol = 1e-6
+a_N = a0 + M / 2.0
+c_N = c0 + N / 2.0
+E_alpha = a0 / b0
+E_beta = c0 / d0
+b_N = b0
+d_N = d0
+X_T = X.T
+XTX = X_T @ X
+XTy = X_T @ y
+identity = np.eye(M)
+for _ in range(max_iter):
+    precision = E_beta * XTX + E_alpha * identity
+    try:
+        S_N = np.linalg.inv(precision)
+    except np.linalg.LinAlgError:
+        S_N = np.linalg.pinv(precision)
+    m_N = E_beta * S_N @ XTy
+    E_w_sq = float((m_N.T @ m_N).item()) + float(np.trace(S_N))
+    b_N_new = b0 + 0.5 * E_w_sq
+    E_alpha_new = a_N / b_N_new
+    residual = y - X @ m_N
+    resid_sq = float((residual.T @ residual).item())
+    trace_XSX = float(np.trace(X @ S_N @ X_T))
+    E_resid_sq = resid_sq + trace_XSX
+    d_N_new = d0 + 0.5 * E_resid_sq
+    E_beta_new = c_N / d_N_new
+    if np.allclose([E_alpha, E_beta], [E_alpha_new, E_beta_new], rtol=rtol, atol=0.0):
+        E_alpha, E_beta = E_alpha_new, E_beta_new
+        b_N, d_N = b_N_new, d_N_new
+        break
+    E_alpha, E_beta = E_alpha_new, E_beta_new
+    b_N, d_N = b_N_new, d_N_new
+else:
+    b_N, d_N = b_N_new, d_N_new
+    S_N = np.linalg.pinv(E_beta * XTX + E_alpha * identity)
+    m_N = E_beta * S_N @ XTy
+y_hat = (X @ m_N).ravel()
 fit = {
-    "coef_": br.coef_.tolist(),
-    "intercept_": float(br.intercept_),
-    "alpha_noise_": float(br.alpha_),   # noise precision
-    "lambda_weights_": float(br.lambda_),  # weights precision
+    "m_N": m_N.ravel().tolist(),
+    "S_N": S_N.tolist(),
+    "a_N": float(a_N),
+    "b_N": float(b_N),
+    "c_N": float(c_N),
+    "d_N": float(d_N),
+    "E_alpha": float(E_alpha),
+    "E_beta": float(E_beta),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model1a-mae_mae-maepy-676fe6af" class="tab">
+<div id="model3_simulate-model1a-mae_mae-maepy-edc6f183" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Mean absolute error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
-e = float(np.mean(np.abs(diff)))
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = np.abs(w_true_arr - w_mean_arr)
+e = float(np.mean(diff))
 </code></pre></div>
 </div></div></div></div>
 <div class="accodion-section">
@@ -3041,12 +3153,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model1a-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model1a-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model1a-rmse_model1a-model_1a_bayesian_regression_shared_priorpy-450a73d2">model1a (model_1a_bayesian_regression_shared_prior.py 450a73d2)</a></li>
-<li><a href="#model3_simulate-model1a-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
+<li class="active"><a href="#model3_simulate-model1a-rmse_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model1a-rmse_model1a-model_1a_bayesian_regression_shared_priorpy-1b1a8a4b">model1a (model_1a_bayesian_regression_shared_prior.py 1b1a8a4b)</a></li>
+<li><a href="#model3_simulate-model1a-rmse_rmse-rmsepy-e32e77a3">rmse (rmse.py e32e77a3)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model1a-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model1a-rmse_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3061,88 +3173,192 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model1a-rmse_model1a-model_1a_bayesian_regression_shared_priorpy-450a73d2" class="tab">
+<div id="model3_simulate-model1a-rmse_model1a-model_1a_bayesian_regression_shared_priorpy-1b1a8a4b" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
-from sklearn.linear_model import BayesianRidge
-br = BayesianRidge(compute_score=False)
-br.fit(x, y)
-y_hat = br.predict(x)
+def _ensure_2d_column(vector):
+    arr = np.asarray(vector)
+    if arr.ndim == 1:
+        arr = arr[:, None]
+    return arr
+X = np.asarray(x)
+y = _ensure_2d_column(y)
+N, M = X.shape
+a0 = 1.0
+b0 = 1.0
+c0 = 1.0
+d0 = 1.0
+max_iter = 500
+rtol = 1e-6
+a_N = a0 + M / 2.0
+c_N = c0 + N / 2.0
+E_alpha = a0 / b0
+E_beta = c0 / d0
+b_N = b0
+d_N = d0
+X_T = X.T
+XTX = X_T @ X
+XTy = X_T @ y
+identity = np.eye(M)
+for _ in range(max_iter):
+    precision = E_beta * XTX + E_alpha * identity
+    try:
+        S_N = np.linalg.inv(precision)
+    except np.linalg.LinAlgError:
+        S_N = np.linalg.pinv(precision)
+    m_N = E_beta * S_N @ XTy
+    E_w_sq = float((m_N.T @ m_N).item()) + float(np.trace(S_N))
+    b_N_new = b0 + 0.5 * E_w_sq
+    E_alpha_new = a_N / b_N_new
+    residual = y - X @ m_N
+    resid_sq = float((residual.T @ residual).item())
+    trace_XSX = float(np.trace(X @ S_N @ X_T))
+    E_resid_sq = resid_sq + trace_XSX
+    d_N_new = d0 + 0.5 * E_resid_sq
+    E_beta_new = c_N / d_N_new
+    if np.allclose([E_alpha, E_beta], [E_alpha_new, E_beta_new], rtol=rtol, atol=0.0):
+        E_alpha, E_beta = E_alpha_new, E_beta_new
+        b_N, d_N = b_N_new, d_N_new
+        break
+    E_alpha, E_beta = E_alpha_new, E_beta_new
+    b_N, d_N = b_N_new, d_N_new
+else:
+    b_N, d_N = b_N_new, d_N_new
+    S_N = np.linalg.pinv(E_beta * XTX + E_alpha * identity)
+    m_N = E_beta * S_N @ XTy
+y_hat = (X @ m_N).ravel()
 fit = {
-    "coef_": br.coef_.tolist(),
-    "intercept_": float(br.intercept_),
-    "alpha_noise_": float(br.alpha_),   # noise precision
-    "lambda_weights_": float(br.lambda_),  # weights precision
+    "m_N": m_N.ravel().tolist(),
+    "S_N": S_N.tolist(),
+    "a_N": float(a_N),
+    "b_N": float(b_N),
+    "c_N": float(c_N),
+    "d_N": float(d_N),
+    "E_alpha": float(E_alpha),
+    "E_beta": float(E_beta),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model1a-rmse_rmse-rmsepy-26beadf2" class="tab">
+<div id="model3_simulate-model1a-rmse_rmse-rmsepy-e32e77a3" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Root mean squared error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = w_true_arr - w_mean_arr
 e = float(np.sqrt(np.mean(diff ** 2)))
 </code></pre></div>
 </div></div></div></div>
@@ -3151,12 +3367,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model1b-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model1b-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model1b-mae_model1b-model_1b_bayesian_regression_with_ardpy-91ca78d0">model1b (model_1b_bayesian_regression_with_ard.py 91ca78d0)</a></li>
-<li><a href="#model3_simulate-model1b-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
+<li class="active"><a href="#model3_simulate-model1b-mae_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model1b-mae_model1b-model_1b_bayesian_regression_with_ardpy-29d8fb8b">model1b (model_1b_bayesian_regression_with_ard.py 29d8fb8b)</a></li>
+<li><a href="#model3_simulate-model1b-mae_mae-maepy-edc6f183">mae (mae.py edc6f183)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model1b-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model1b-mae_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3171,89 +3387,201 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model1b-mae_model1b-model_1b_bayesian_regression_with_ardpy-91ca78d0" class="tab">
+<div id="model3_simulate-model1b-mae_model1b-model_1b_bayesian_regression_with_ardpy-29d8fb8b" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
-from sklearn.linear_model import ARDRegression
-ard = ARDRegression(compute_score=False)
-ard.fit(x, y)
-y_hat = ard.predict(x)
+def _ensure_2d_column(vector):
+    arr = np.asarray(vector)
+    if arr.ndim == 1:
+        arr = arr[:, None]
+    return arr
+X = np.asarray(x)
+y = _ensure_2d_column(y)
+N, M = X.shape
+a0 = 1.0
+b0 = 1.0
+c0 = 1.0
+d0 = 1.0
+max_iter = 500
+rtol = 1e-6
+a_N = a0 + 0.5
+c_N = c0 + N / 2.0
+b_N = np.full(M, b0)
+d_N = d0
+E_alpha = a_N / b_N
+E_beta = c_N / d_N
+X_T = X.T
+XTX = X_T @ X
+XTy = X_T @ y
+for _ in range(max_iter):
+    precision = E_beta * XTX + np.diag(E_alpha)
+    try:
+        S_N = np.linalg.inv(precision)
+    except np.linalg.LinAlgError:
+        S_N = np.linalg.pinv(precision)
+    m_N = E_beta * S_N @ XTy
+    m_sq = np.square(m_N.flatten())
+    diag_S = np.diag(S_N)
+    b_N_new = b0 + 0.5 * (m_sq + diag_S)
+    E_alpha_new = a_N / b_N_new
+    residual = y - X @ m_N
+    resid_sq = float((residual.T @ residual).item())
+    trace_XSX = float(np.trace(X @ S_N @ X_T))
+    d_N_new = d0 + 0.5 * (resid_sq + trace_XSX)
+    E_beta_new = c_N / d_N_new
+    if np.allclose(
+        np.concatenate([E_alpha, [E_beta]]),
+        np.concatenate([E_alpha_new, [E_beta_new]]),
+        rtol=rtol,
+        atol=0.0,
+    ):
+        E_alpha = E_alpha_new
+        E_beta = E_beta_new
+        b_N = b_N_new
+        d_N = d_N_new
+        break
+    E_alpha = E_alpha_new
+    E_beta = E_beta_new
+    b_N = b_N_new
+    d_N = d_N_new
+else:
+    precision = E_beta * XTX + np.diag(E_alpha)
+    S_N = np.linalg.pinv(precision)
+    m_N = E_beta * S_N @ XTy
+y_hat = (X @ m_N).ravel()
 fit = {
-    "coef_": ard.coef_.tolist(),
-    "intercept_": float(ard.intercept_),
-    "alpha_noise_": float(ard.alpha_),    # noise precision
-    "lambda_weights_": ard.lambda_.tolist(),
+    "m_N": m_N.ravel().tolist(),
+    "S_N": S_N.tolist(),
+    "a_N": float(a_N),
+    "b_N": b_N.tolist(),
+    "c_N": float(c_N),
+    "d_N": float(d_N),
+    "E_alpha": E_alpha.tolist(),
+    "E_beta": float(E_beta),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model1b-mae_mae-maepy-676fe6af" class="tab">
+<div id="model3_simulate-model1b-mae_mae-maepy-edc6f183" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Mean absolute error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
-e = float(np.mean(np.abs(diff)))
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = np.abs(w_true_arr - w_mean_arr)
+e = float(np.mean(diff))
 </code></pre></div>
 </div></div></div></div>
 <div class="accodion-section">
@@ -3261,12 +3589,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model1b-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model1b-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model1b-rmse_model1b-model_1b_bayesian_regression_with_ardpy-91ca78d0">model1b (model_1b_bayesian_regression_with_ard.py 91ca78d0)</a></li>
-<li><a href="#model3_simulate-model1b-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
+<li class="active"><a href="#model3_simulate-model1b-rmse_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model1b-rmse_model1b-model_1b_bayesian_regression_with_ardpy-29d8fb8b">model1b (model_1b_bayesian_regression_with_ard.py 29d8fb8b)</a></li>
+<li><a href="#model3_simulate-model1b-rmse_rmse-rmsepy-e32e77a3">rmse (rmse.py e32e77a3)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model1b-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model1b-rmse_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3281,88 +3609,200 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model1b-rmse_model1b-model_1b_bayesian_regression_with_ardpy-91ca78d0" class="tab">
+<div id="model3_simulate-model1b-rmse_model1b-model_1b_bayesian_regression_with_ardpy-29d8fb8b" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
-from sklearn.linear_model import ARDRegression
-ard = ARDRegression(compute_score=False)
-ard.fit(x, y)
-y_hat = ard.predict(x)
+def _ensure_2d_column(vector):
+    arr = np.asarray(vector)
+    if arr.ndim == 1:
+        arr = arr[:, None]
+    return arr
+X = np.asarray(x)
+y = _ensure_2d_column(y)
+N, M = X.shape
+a0 = 1.0
+b0 = 1.0
+c0 = 1.0
+d0 = 1.0
+max_iter = 500
+rtol = 1e-6
+a_N = a0 + 0.5
+c_N = c0 + N / 2.0
+b_N = np.full(M, b0)
+d_N = d0
+E_alpha = a_N / b_N
+E_beta = c_N / d_N
+X_T = X.T
+XTX = X_T @ X
+XTy = X_T @ y
+for _ in range(max_iter):
+    precision = E_beta * XTX + np.diag(E_alpha)
+    try:
+        S_N = np.linalg.inv(precision)
+    except np.linalg.LinAlgError:
+        S_N = np.linalg.pinv(precision)
+    m_N = E_beta * S_N @ XTy
+    m_sq = np.square(m_N.flatten())
+    diag_S = np.diag(S_N)
+    b_N_new = b0 + 0.5 * (m_sq + diag_S)
+    E_alpha_new = a_N / b_N_new
+    residual = y - X @ m_N
+    resid_sq = float((residual.T @ residual).item())
+    trace_XSX = float(np.trace(X @ S_N @ X_T))
+    d_N_new = d0 + 0.5 * (resid_sq + trace_XSX)
+    E_beta_new = c_N / d_N_new
+    if np.allclose(
+        np.concatenate([E_alpha, [E_beta]]),
+        np.concatenate([E_alpha_new, [E_beta_new]]),
+        rtol=rtol,
+        atol=0.0,
+    ):
+        E_alpha = E_alpha_new
+        E_beta = E_beta_new
+        b_N = b_N_new
+        d_N = d_N_new
+        break
+    E_alpha = E_alpha_new
+    E_beta = E_beta_new
+    b_N = b_N_new
+    d_N = d_N_new
+else:
+    precision = E_beta * XTX + np.diag(E_alpha)
+    S_N = np.linalg.pinv(precision)
+    m_N = E_beta * S_N @ XTy
+y_hat = (X @ m_N).ravel()
 fit = {
-    "coef_": ard.coef_.tolist(),
-    "intercept_": float(ard.intercept_),
-    "alpha_noise_": float(ard.alpha_),    # noise precision
-    "lambda_weights_": ard.lambda_.tolist(),
+    "m_N": m_N.ravel().tolist(),
+    "S_N": S_N.tolist(),
+    "a_N": float(a_N),
+    "b_N": b_N.tolist(),
+    "c_N": float(c_N),
+    "d_N": float(d_N),
+    "E_alpha": E_alpha.tolist(),
+    "E_beta": float(E_beta),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model1b-rmse_rmse-rmsepy-26beadf2" class="tab">
+<div id="model3_simulate-model1b-rmse_rmse-rmsepy-e32e77a3" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Root mean squared error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = w_true_arr - w_mean_arr
 e = float(np.sqrt(np.mean(diff ** 2)))
 </code></pre></div>
 </div></div></div></div>
@@ -3371,12 +3811,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model2-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model2-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model2-mae_model2-model_2_bayesian_regression_group_switchpy-b71c4a2a">model2 (model_2_bayesian_regression_group_switch.py b71c4a2a)</a></li>
-<li><a href="#model3_simulate-model2-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
+<li class="active"><a href="#model3_simulate-model2-mae_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model2-mae_model2-model_2_bayesian_regression_group_switchpy-ded63619">model2 (model_2_bayesian_regression_group_switch.py ded63619)</a></li>
+<li><a href="#model3_simulate-model2-mae_mae-maepy-edc6f183">mae (mae.py edc6f183)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model2-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model2-mae_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3391,69 +3831,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model2-mae_model2-model_2_bayesian_regression_group_switchpy-b71c4a2a" class="tab">
+<div id="model3_simulate-model2-mae_model2-model_2_bayesian_regression_group_switchpy-ded63619" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -3530,14 +4009,28 @@ fit = {
     "E_alpha": float(E_alpha),
     "E_beta": float(E_beta),
     "p_N": float(p_N),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model2-mae_mae-maepy-676fe6af" class="tab">
+<div id="model3_simulate-model2-mae_mae-maepy-edc6f183" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Mean absolute error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
-e = float(np.mean(np.abs(diff)))
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = np.abs(w_true_arr - w_mean_arr)
+e = float(np.mean(diff))
 </code></pre></div>
 </div></div></div></div>
 <div class="accodion-section">
@@ -3545,12 +4038,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model2-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model2-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model2-rmse_model2-model_2_bayesian_regression_group_switchpy-b71c4a2a">model2 (model_2_bayesian_regression_group_switch.py b71c4a2a)</a></li>
-<li><a href="#model3_simulate-model2-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
+<li class="active"><a href="#model3_simulate-model2-rmse_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model2-rmse_model2-model_2_bayesian_regression_group_switchpy-ded63619">model2 (model_2_bayesian_regression_group_switch.py ded63619)</a></li>
+<li><a href="#model3_simulate-model2-rmse_rmse-rmsepy-e32e77a3">rmse (rmse.py e32e77a3)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model2-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model2-rmse_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3565,69 +4058,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model2-rmse_model2-model_2_bayesian_regression_group_switchpy-b71c4a2a" class="tab">
+<div id="model3_simulate-model2-rmse_model2-model_2_bayesian_regression_group_switchpy-ded63619" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -3704,13 +4236,27 @@ fit = {
     "E_alpha": float(E_alpha),
     "E_beta": float(E_beta),
     "p_N": float(p_N),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model2-rmse_rmse-rmsepy-26beadf2" class="tab">
+<div id="model3_simulate-model2-rmse_rmse-rmsepy-e32e77a3" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Root mean squared error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = w_true_arr - w_mean_arr
 e = float(np.sqrt(np.mean(diff ** 2)))
 </code></pre></div>
 </div></div></div></div>
@@ -3719,12 +4265,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model3-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model3-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model3-mae_model3-model_3_bayesian_regression_learned_group_sparsitypy-c657b8e8">model3 (model_3_bayesian_regression_learned_group_sparsity.py c657b8e8)</a></li>
-<li><a href="#model3_simulate-model3-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
+<li class="active"><a href="#model3_simulate-model3-mae_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model3-mae_model3-model_3_bayesian_regression_learned_group_sparsitypy-2d8b264c">model3 (model_3_bayesian_regression_learned_group_sparsity.py 2d8b264c)</a></li>
+<li><a href="#model3_simulate-model3-mae_mae-maepy-edc6f183">mae (mae.py edc6f183)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model3-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model3-mae_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3739,69 +4285,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model3-mae_model3-model_3_bayesian_regression_learned_group_sparsitypy-c657b8e8" class="tab">
+<div id="model3_simulate-model3-mae_model3-model_3_bayesian_regression_learned_group_sparsitypy-2d8b264c" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -3900,14 +4485,28 @@ fit = {
     "e_N": float(e_N),
     "f_N": float(f_N),
     "pi_mean": float(pi_mean),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model3-mae_mae-maepy-676fe6af" class="tab">
+<div id="model3_simulate-model3-mae_mae-maepy-edc6f183" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Mean absolute error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
-e = float(np.mean(np.abs(diff)))
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = np.abs(w_true_arr - w_mean_arr)
+e = float(np.mean(diff))
 </code></pre></div>
 </div></div></div></div>
 <div class="accodion-section">
@@ -3915,12 +4514,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model3-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model3-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model3-rmse_model3-model_3_bayesian_regression_learned_group_sparsitypy-c657b8e8">model3 (model_3_bayesian_regression_learned_group_sparsity.py c657b8e8)</a></li>
-<li><a href="#model3_simulate-model3-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
+<li class="active"><a href="#model3_simulate-model3-rmse_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model3-rmse_model3-model_3_bayesian_regression_learned_group_sparsitypy-2d8b264c">model3 (model_3_bayesian_regression_learned_group_sparsity.py 2d8b264c)</a></li>
+<li><a href="#model3_simulate-model3-rmse_rmse-rmsepy-e32e77a3">rmse (rmse.py e32e77a3)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model3-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model3-rmse_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -3935,69 +4534,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model3-rmse_model3-model_3_bayesian_regression_learned_group_sparsitypy-c657b8e8" class="tab">
+<div id="model3_simulate-model3-rmse_model3-model_3_bayesian_regression_learned_group_sparsitypy-2d8b264c" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -4096,13 +4734,27 @@ fit = {
     "e_N": float(e_N),
     "f_N": float(f_N),
     "pi_mean": float(pi_mean),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model3-rmse_rmse-rmsepy-26beadf2" class="tab">
+<div id="model3_simulate-model3-rmse_rmse-rmsepy-e32e77a3" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Root mean squared error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = w_true_arr - w_mean_arr
 e = float(np.sqrt(np.mean(diff ** 2)))
 </code></pre></div>
 </div></div></div></div>
@@ -4111,12 +4763,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model4-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model4-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model4-mae_model4-model_4_reparameterized_regressionpy-1a906ead">model4 (model_4_reparameterized_regression.py 1a906ead)</a></li>
-<li><a href="#model3_simulate-model4-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
+<li class="active"><a href="#model3_simulate-model4-mae_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model4-mae_model4-model_4_reparameterized_regressionpy-6220d530">model4 (model_4_reparameterized_regression.py 6220d530)</a></li>
+<li><a href="#model3_simulate-model4-mae_mae-maepy-edc6f183">mae (mae.py edc6f183)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model4-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model4-mae_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4131,69 +4783,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model4-mae_model4-model_4_reparameterized_regressionpy-1a906ead" class="tab">
+<div id="model3_simulate-model4-mae_model4-model_4_reparameterized_regressionpy-6220d530" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -4253,14 +4944,28 @@ fit = {
     "d_N": float(d_N),
     "E_alpha": float(E_alpha),
     "E_beta": float(E_beta),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model4-mae_mae-maepy-676fe6af" class="tab">
+<div id="model3_simulate-model4-mae_mae-maepy-edc6f183" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Mean absolute error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
-e = float(np.mean(np.abs(diff)))
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = np.abs(w_true_arr - w_mean_arr)
+e = float(np.mean(diff))
 </code></pre></div>
 </div></div></div></div>
 <div class="accodion-section">
@@ -4268,12 +4973,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model4-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model4-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model4-rmse_model4-model_4_reparameterized_regressionpy-1a906ead">model4 (model_4_reparameterized_regression.py 1a906ead)</a></li>
-<li><a href="#model3_simulate-model4-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
+<li class="active"><a href="#model3_simulate-model4-rmse_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model4-rmse_model4-model_4_reparameterized_regressionpy-6220d530">model4 (model_4_reparameterized_regression.py 6220d530)</a></li>
+<li><a href="#model3_simulate-model4-rmse_rmse-rmsepy-e32e77a3">rmse (rmse.py e32e77a3)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model4-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model4-rmse_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4288,69 +4993,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model4-rmse_model4-model_4_reparameterized_regressionpy-1a906ead" class="tab">
+<div id="model3_simulate-model4-rmse_model4-model_4_reparameterized_regressionpy-6220d530" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -4410,13 +5154,27 @@ fit = {
     "d_N": float(d_N),
     "E_alpha": float(E_alpha),
     "E_beta": float(E_beta),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model4-rmse_rmse-rmsepy-26beadf2" class="tab">
+<div id="model3_simulate-model4-rmse_rmse-rmsepy-e32e77a3" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Root mean squared error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = w_true_arr - w_mean_arr
 e = float(np.sqrt(np.mean(diff ** 2)))
 </code></pre></div>
 </div></div></div></div>
@@ -4425,12 +5183,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model6-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model6-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model6-mae_model6-model_6_spike_and_slab_shared_precisionpy-33f78e11">model6 (model_6_spike_and_slab_shared_precision.py 33f78e11)</a></li>
-<li><a href="#model3_simulate-model6-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
+<li class="active"><a href="#model3_simulate-model6-mae_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model6-mae_model6-model_6_spike_and_slab_shared_precisionpy-dac3501d">model6 (model_6_spike_and_slab_shared_precision.py dac3501d)</a></li>
+<li><a href="#model3_simulate-model6-mae_mae-maepy-edc6f183">mae (mae.py edc6f183)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model6-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model6-mae_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4445,69 +5203,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model6-mae_model6-model_6_spike_and_slab_shared_precisionpy-33f78e11" class="tab">
+<div id="model3_simulate-model6-mae_model6-model_6_spike_and_slab_shared_precisionpy-dac3501d" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -4651,14 +5448,28 @@ fit = {
     "E_log_beta": float(E_log_beta),
     "E_log_alpha": float(E_log_alpha),
     "E_log_s0": float(E_log_s0),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model6-mae_mae-maepy-676fe6af" class="tab">
+<div id="model3_simulate-model6-mae_mae-maepy-edc6f183" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Mean absolute error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
-e = float(np.mean(np.abs(diff)))
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = np.abs(w_true_arr - w_mean_arr)
+e = float(np.mean(diff))
 </code></pre></div>
 </div></div></div></div>
 <div class="accodion-section">
@@ -4666,12 +5477,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model6-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model6-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model6-rmse_model6-model_6_spike_and_slab_shared_precisionpy-33f78e11">model6 (model_6_spike_and_slab_shared_precision.py 33f78e11)</a></li>
-<li><a href="#model3_simulate-model6-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
+<li class="active"><a href="#model3_simulate-model6-rmse_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model6-rmse_model6-model_6_spike_and_slab_shared_precisionpy-dac3501d">model6 (model_6_spike_and_slab_shared_precision.py dac3501d)</a></li>
+<li><a href="#model3_simulate-model6-rmse_rmse-rmsepy-e32e77a3">rmse (rmse.py e32e77a3)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model6-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model6-rmse_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4686,69 +5497,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model6-rmse_model6-model_6_spike_and_slab_shared_precisionpy-33f78e11" class="tab">
+<div id="model3_simulate-model6-rmse_model6-model_6_spike_and_slab_shared_precisionpy-dac3501d" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -4892,13 +5742,27 @@ fit = {
     "E_log_beta": float(E_log_beta),
     "E_log_alpha": float(E_log_alpha),
     "E_log_s0": float(E_log_s0),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model6-rmse_rmse-rmsepy-26beadf2" class="tab">
+<div id="model3_simulate-model6-rmse_rmse-rmsepy-e32e77a3" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Root mean squared error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = w_true_arr - w_mean_arr
 e = float(np.sqrt(np.mean(diff ** 2)))
 </code></pre></div>
 </div></div></div></div>
@@ -4907,12 +5771,12 @@ e = float(np.sqrt(np.mean(diff ** 2)))
 <div id=model3_simulate-model7-mae class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model7-mae_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model7-mae_model7-model_7_spike_and_slab_ard_precisionpy-10a1fd78">model7 (model_7_spike_and_slab_ard_precision.py 10a1fd78)</a></li>
-<li><a href="#model3_simulate-model7-mae_mae-maepy-676fe6af">mae (mae.py 676fe6af)</a></li>
+<li class="active"><a href="#model3_simulate-model7-mae_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model7-mae_model7-model_7_spike_and_slab_ard_precisionpy-403b71f2">model7 (model_7_spike_and_slab_ard_precision.py 403b71f2)</a></li>
+<li><a href="#model3_simulate-model7-mae_mae-maepy-edc6f183">mae (mae.py edc6f183)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model7-mae_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model7-mae_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -4927,69 +5791,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model7-mae_model7-model_7_spike_and_slab_ard_precisionpy-10a1fd78" class="tab">
+<div id="model3_simulate-model7-mae_model7-model_7_spike_and_slab_ard_precisionpy-403b71f2" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -5120,14 +6023,28 @@ fit = {
     "pi_mean": float(pi_mean),
     "E_log_beta": float(E_log_beta),
     "E_log_alpha": E_log_alpha.tolist(),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model7-mae_mae-maepy-676fe6af" class="tab">
+<div id="model3_simulate-model7-mae_mae-maepy-edc6f183" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Mean absolute error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
-e = float(np.mean(np.abs(diff)))
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = np.abs(w_true_arr - w_mean_arr)
+e = float(np.mean(diff))
 </code></pre></div>
 </div></div></div></div>
 <div class="accodion-section">
@@ -5135,12 +6052,12 @@ e = float(np.mean(np.abs(diff)))
 <div id=model3_simulate-model7-rmse class="accordion-section-content">
 <div class="tabs">
 <ul class="tab-links">
-<li class="active"><a href="#model3_simulate-model7-rmse_model3_simulate-model3_simulatepy-b93897a3">model3_simulate (model3_simulate.py b93897a3)</a></li>
-<li><a href="#model3_simulate-model7-rmse_model7-model_7_spike_and_slab_ard_precisionpy-10a1fd78">model7 (model_7_spike_and_slab_ard_precision.py 10a1fd78)</a></li>
-<li><a href="#model3_simulate-model7-rmse_rmse-rmsepy-26beadf2">rmse (rmse.py 26beadf2)</a></li>
+<li class="active"><a href="#model3_simulate-model7-rmse_model3_simulate-model3_simulatepy-c4136cea">model3_simulate (model3_simulate.py c4136cea)</a></li>
+<li><a href="#model3_simulate-model7-rmse_model7-model_7_spike_and_slab_ard_precisionpy-403b71f2">model7 (model_7_spike_and_slab_ard_precision.py 403b71f2)</a></li>
+<li><a href="#model3_simulate-model7-rmse_rmse-rmsepy-e32e77a3">rmse (rmse.py e32e77a3)</a></li>
 </ul>
 <div class="tab-content">
-<div id="model3_simulate-model7-rmse_model3_simulate-model3_simulatepy-b93897a3" class="tab active">
+<div id="model3_simulate-model7-rmse_model3_simulate-model3_simulatepy-c4136cea" class="tab active">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 """Simulation script for Model 3: Bayesian regression with learned group sparsity.
@@ -5155,69 +6072,108 @@ expects the following variables to be defined in the global namespace:
     Number of observations to generate.
 ``d``
     Number of covariates (features) per observation.
-``seed`` (optional)
+``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0`` (all optional)
-    Hyperparameters for the Gamma/Beta priors described in the model. Each
-    defaults to 1.0, matching the values used by the corresponding analysis
-    module.
-``noise_std`` (optional)
-    Observation noise standard deviation. When provided the noise precision is
-    not sampled from its Gamma prior and the supplied value is used instead.
-``sparsity_prob`` (optional)
-    Probability that the shared Bernoulli switch is ``1`` (i.e. most features
-    are active). When omitted the probability is sampled from the Beta prior
-    defined by ``e0`` and ``f0``.
+``a0, b0, c0, d0, e0, f0``
+    Hyperparameters for the Gamma/Beta priors described in the model. In the
+    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
+    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
+    observational noise. The sparsity probability ``π`` is sampled from the
+    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
+    active.
+The observation noise variance is governed by the latent precision ``β`` which
+follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
+standard deviation used to draw the observation noise equals the expectation of
+``β^{-1}`` under this Gamma distribution (requiring ``c0 > 1``), ensuring the
+variance is tied to the prior rather than manually specified.
 On completion the script exposes two NumPy arrays named ``x`` and ``y`` that are
-consumed by downstream DSC stages.
+consumed by downstream DSC stages along with ``w_true`` containing the
+regression coefficients used to synthesise the observations.
 """
 import numpy as np
-seed = globals().get("seed", None)
+from matplotlib import pyplot as plt
 rng = np.random.default_rng(seed)
-a0 = float(globals().get("a0", 1.0))
-b0 = float(globals().get("b0", 1.0))
-c0 = float(globals().get("c0", 1.0))
-d0 = float(globals().get("d0", 1.0))
-e0 = float(globals().get("e0", 1.0))
-f0 = float(globals().get("f0", 1.0))
-noise_std_value = globals().get("noise_std", None)
-noise_std = None if noise_std_value is None else float(noise_std_value)
-sparsity_prob_value = globals().get("sparsity_prob", None)
-if sparsity_prob_value is not None:
-    pi_override = float(sparsity_prob_value)
-    if not 0.0 <= pi_override <= 1.0:
-        raise ValueError("sparsity_prob must be between 0 and 1 inclusive")
-else:
-    pi_override = None
+def _build_design_matrix(time_points, frequency=1.0):
+    """Construct the sinusoidal design matrix used by Model 3.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times in the interval [0, 1).
+    frequency : float, optional
+        Angular frequency multiplier for the sinusoidal basis, by default 1.0.
+    Returns
+    -------
+    ndarray
+        Design matrix with columns ``sin(2πft)``, ``cos(2πft)``, and an
+        intercept term.
+    """
+    angular = 2.0 * np.pi * frequency * time_points
+    sin_term = np.sin(angular)
+    cos_term = np.cos(angular)
+    intercept = np.ones_like(time_points)
+    return np.column_stack([sin_term, cos_term, intercept])
+def plot_generated_data(time_points, observations, signal=None, filename=None):
+    """Plot the generated observations against time.
+    Parameters
+    ----------
+    time_points : ndarray
+        Sampling times corresponding to each observation.
+    observations : ndarray
+        Observed response values including noise.
+    signal : ndarray, optional
+        Noise-free signal, if available, to overlay on the plot.
+    filename : str, optional
+        When provided the figure is saved to ``filename`` instead of using the
+        default ``model3_generated_data.png``.
+    """
+    plt.figure(figsize=(8, 4))
+    plt.scatter(time_points, observations, color="tab:blue", alpha=0.6,
+                label="observations")
+    if signal is not None:
+        sort_idx = np.argsort(time_points)
+        plt.plot(time_points[sort_idx], signal[sort_idx], color="tab:orange",
+                 linewidth=2.0, label="signal")
+    plt.xlabel("Time")
+    plt.ylabel("Response")
+    plt.title("Model 3 simulated rhythmic data")
+    plt.legend()
+    output_path = filename or "model3_generated_data.png"
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
-if noise_std is None:
-    beta = rng.gamma(shape=c0, scale=1.0 / d0)
-    noise_scale = np.sqrt(1.0 / beta)
-else:
-    noise_scale = noise_std
-    beta = 1.0 / (noise_scale ** 2)
-if pi_override is None:
-    pi = rng.beta(e0, f0)
-else:
-    pi = pi_override
-gamma_switch = rng.binomial(1, pi)
+beta = rng.gamma(shape=c0, scale=1.0 / d0)
+pi = rng.beta(e0, f0)
+if c0 <= 1.0:
+    raise ValueError(
+        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
+    )
+expected_inv_beta = d0 / (c0 - 1.0)
+sparsity_prob = float(e0 / (e0 + f0))
+noise_std = float(expected_inv_beta)
+omega_switch = rng.binomial(1, pi)
 omega = rng.normal(loc=0.0, scale=np.sqrt(1.0 / alpha), size=d)
-gamma_vector = np.ones(d)
-if d > 1:
-    gamma_vector[1:] = gamma_switch
-x = rng.normal(loc=0.0, scale=1.0, size=(n, d))
+gamma_vector = np.array([omega_switch, omega_switch, 1.0])
+time_points = rng.uniform(low=0.0, high=1.0, size=n)
+x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
+noise = rng.normal(loc=0.0, scale=noise_std, size=n)
 y = signal + noise
+plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
+w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
+    "expected_inv_beta": float(expected_inv_beta),
+    "noise_std": float(noise_std),
+    "sparsity_prob": float(sparsity_prob),
     "pi": float(pi),
-    "gamma": int(gamma_switch),
-    "omega": (gamma_vector * omega).tolist(),
+    "omega_switch": int(omega_switch),
+    "weights": w_true.tolist(),
+    "time": time_points.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model7-rmse_model7-model_7_spike_and_slab_ard_precisionpy-10a1fd78" class="tab">
+<div id="model3_simulate-model7-rmse_model7-model_7_spike_and_slab_ard_precisionpy-403b71f2" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
 import numpy as np
@@ -5348,13 +6304,27 @@ fit = {
     "pi_mean": float(pi_mean),
     "E_log_beta": float(E_log_beta),
     "E_log_alpha": E_log_alpha.tolist(),
+    "w_mean": m_N.ravel().tolist(),
+    "w_cov": S_N.tolist(),
 }
 </code></pre></div>
-<div id="model3_simulate-model7-rmse_rmse-rmsepy-26beadf2" class="tab">
+<div id="model3_simulate-model7-rmse_rmse-rmsepy-e32e77a3" class="tab">
 <pre><code class="language-python; line-numbers; left-trim; right-trim;">
 
+"""Root mean squared error between posterior mean weights and ground truth."""
 import numpy as np
-diff = y_true - y_pred
+def _extract_w_mean(fit_dict):
+    if isinstance(fit_dict, dict):
+        if "w_mean" in fit_dict:
+            return fit_dict["w_mean"]
+        if "m_N" in fit_dict:
+            return fit_dict["m_N"]
+    raise KeyError("fit dictionary must contain 'w_mean' (or legacy 'm_N')")
+w_true_arr = np.asarray(w_true, dtype=float)
+w_mean_arr = np.asarray(_extract_w_mean(fit), dtype=float)
+if w_mean_arr.ndim > 1:
+    w_mean_arr = w_mean_arr.ravel()
+diff = w_true_arr - w_mean_arr
 e = float(np.sqrt(np.mean(diff ** 2)))
 </code></pre></div>
 </div></div></div></div>
