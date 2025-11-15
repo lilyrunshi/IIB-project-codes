@@ -27,7 +27,7 @@ require_dscquery <- function() {
         paste0(
           "Could not load dscrutils::dscquery(). Install the 'dscrutils' package",
           " or supply the DSC results manually via the `dsc_table` argument.")
-      ),
+      )
       call. = FALSE
     }
   )
@@ -322,7 +322,7 @@ prepare_prediction_curves <- function(dsc_table, root_dir, frequency = 1.0) {
     select(any_of(unique(sim_cols))) %>%
     distinct() %>%
     rowwise() %>%
-    mutate(data = list(read_model3_simulation(cur_data_all(), root_dir, frequency = frequency))) %>%
+    mutate(data = list(read_model3_simulation(pick(), root_dir, frequency = frequency))) %>%
     ungroup()
 
   predictions <- dsc_table %>%
