@@ -27,7 +27,8 @@ assumptions across controlled noise and sparsity sweeps.【F:DSC_framework/main.
   models.【F:DSC_framework/R/noise_summary.R†L1-L200】【F:DSC_framework/R/noise_summary.R†L320-L624】【F:DSC_framework/R/noise_summary.R†L640-L745】
 - `DSC_framework/R/prediction_curves.R` – visualisation utilities that read the
   pickle artefacts emitted by DSC and overlay fitted curves with the simulated
-  observations for each replicate.【F:DSC_framework/R/prediction_curves.R†L1-L432】
+  observations for each replicate using the sinusoidal design matrix and weight
+  vectors saved by the pipeline.【F:DSC_framework/R/prediction_curves.R†L1-L432】
 - `SyntheticData.py` – stand-alone class for constructing oscillatory synthetic
   datasets with optional spline waveforms, additive noise, and plotting
   helpers used by the exploratory notebooks/scripts outside the DSC
@@ -102,10 +103,10 @@ them).  The folder structure mirrors the module names defined in `main.dsc`.
   ```
   Each plot overlays the simulated observations with model-specific prediction
   lines, with filenames encoding the noise and sparsity settings for easy
-  navigation.【F:DSC_framework/R/prediction_curves.R†L242-L431】 When runs omit the
-  latent time vector, the helper reconstructs sampling times from the saved
-  design matrix (`simulate.x`), keeping existing DSC results compatible without
-  requiring re-simulation.【F:DSC_framework/R/prediction_curves.R†L142-L241】
+  navigation.【F:DSC_framework/R/prediction_curves.R†L242-L431】 The helper
+  reconstructs sampling times directly from the sinusoidal design matrix
+  (`simulate.x`) and uses the simulated `w` coefficients (sin, cos, intercept)
+  to rebuild the true signal for reference.【F:DSC_framework/R/prediction_curves.R†L142-L241】
 
 ## Extending the workflow
 
