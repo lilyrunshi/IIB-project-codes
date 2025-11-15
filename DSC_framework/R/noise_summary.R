@@ -79,11 +79,10 @@ coerce_numeric <- function(x) {
 #' @param dscout A tibble produced by dscquery().
 #' @return A tibble with numeric columns ready for aggregation.
 normalize_noise_results <- function(dscout) {
-  dscout %>%
-    mutate(across(
-      c(simulate.noise_std, rmse.error, mae.error),
-      coerce_numeric
-    ))
+  mutate(dscout, across(
+    c(simulate.noise_std, rmse.error, mae.error),
+    coerce_numeric
+  ))
 }
 
 #' Prepare the DSC output for sparsity-based summaries.
@@ -91,11 +90,10 @@ normalize_noise_results <- function(dscout) {
 #' @param dscout A tibble produced by dscquery().
 #' @return A tibble with numeric columns ready for aggregation.
 normalize_sparsity_results <- function(dscout) {
-  dscout %>%
-    mutate(across(
-      c(simulate.sparsity_prob, rmse.error, mae.error),
-      coerce_numeric
-    ))
+  mutate(dscout, across(
+    c(simulate.sparsity_prob, rmse.error, mae.error),
+    coerce_numeric
+  ))
 }
 
 #' Prepare the DSC output for joint noise / sparsity summaries.
@@ -103,11 +101,10 @@ normalize_sparsity_results <- function(dscout) {
 #' @param dscout A tibble produced by dscquery().
 #' @return A tibble with numeric columns ready for aggregation.
 normalize_noise_sparsity_results <- function(dscout) {
-  dscout %>%
-    mutate(across(
-      c(simulate.noise_std, simulate.sparsity_prob, rmse.error, mae.error),
-      coerce_numeric
-    ))
+  mutate(dscout, across(
+    c(simulate.noise_std, simulate.sparsity_prob, rmse.error, mae.error),
+    coerce_numeric
+  ))
 }
 
 require_dscquery <- function() {
@@ -174,8 +171,7 @@ query_noise_sparsity_results <- function(
   if (!is.null(modules)) {
     module_column <- intersect(c("analysis", "module", "method"), names(results))
     if (length(module_column) > 0) {
-      results <- results %>%
-        filter(.data[[module_column[[1]]]] %in% modules)
+      results <- filter(results, .data[[module_column[[1]]]] %in% modules)
     } else {
       warning(
         paste(
@@ -194,64 +190,71 @@ query_noise_sparsity_results <- function(
 #' @param dscout Tibble with `rmse.error` / `mae.error` columns.
 #' @return Long-format tibble containing one row per metric.
 metrics_long <- function(dscout) {
-  dscout %>%
-    pivot_longer(
-      cols = ends_with(".error"),
-      names_to = "metric",
-      values_to = "value"
-    ) %>%
-    mutate(
-      metric = sub("\\.error$", "", .data$metric),
-      metric = factor(.data$metric, levels = c("rmse", "mae"))
-    )
+  longer <- pivot_longer(
+    dscout,
+    cols = ends_with(".error"),
+    names_to = "metric",
+    values_to = "value"
+  )
+  mutate(
+    longer,
+    metric = sub("\\.error$", "", .data$metric),
+    metric = factor(.data$metric, levels = c("rmse", "mae"))
+  )
 }
 
 summarise_noise_metrics <- function(dscout) {
-  dscout %>%
-    normalize_noise_results() %>%
-    metrics_long() %>%
-    group_by(.data$analysis, .data$metric, .data$simulate.noise_std) %>%
-    summarise(
-      mean = mean(.data$value, na.rm = TRUE),
-      median = median(.data$value, na.rm = TRUE),
-      sd = sd(.data$value, na.rm = TRUE),
-      q25 = quantile(.data$value, probs = 0.25, na.rm = TRUE),
-      q75 = quantile(.data$value, probs = 0.75, na.rm = TRUE),
-      .groups = "drop"
-    )
+  normalized <- normalize_noise_results(dscout)
+  long_metrics <- metrics_long(normalized)
+  grouped <- group_by(long_metrics, .data$analysis, .data$metric, .data$simulate.noise_std)
+  summarise(
+    grouped,
+    mean = mean(.data$value, na.rm = TRUE),
+    median = median(.data$value, na.rm = TRUE),
+    sd = sd(.data$value, na.rm = TRUE),
+    q25 = quantile(.data$value, probs = 0.25, na.rm = TRUE),
+    q75 = quantile(.data$value, probs = 0.75, na.rm = TRUE),
+    .groups = "drop"
+  )
 }
 
 summarise_sparsity_metrics <- function(dscout) {
-  dscout %>%
-    normalize_sparsity_results() %>%
-    metrics_long() %>%
-    group_by(.data$analysis, .data$metric, .data$simulate.sparsity_prob) %>%
-    summarise(
-      mean = mean(.data$value, na.rm = TRUE),
-      median = median(.data$value, na.rm = TRUE),
-      sd = sd(.data$value, na.rm = TRUE),
-      q25 = quantile(.data$value, probs = 0.25, na.rm = TRUE),
-      q75 = quantile(.data$value, probs = 0.75, na.rm = TRUE),
-      .groups = "drop"
-    )
+  normalized <- normalize_sparsity_results(dscout)
+  long_metrics <- metrics_long(normalized)
+  grouped <- group_by(
+    long_metrics,
+    .data$analysis,
+    .data$metric,
+    .data$simulate.sparsity_prob
+  )
+  summarise(
+    grouped,
+    mean = mean(.data$value, na.rm = TRUE),
+    median = median(.data$value, na.rm = TRUE),
+    sd = sd(.data$value, na.rm = TRUE),
+    q25 = quantile(.data$value, probs = 0.25, na.rm = TRUE),
+    q75 = quantile(.data$value, probs = 0.75, na.rm = TRUE),
+    .groups = "drop"
+  )
 }
 
 summarise_noise_sparsity_metrics <- function(dscout) {
-  dscout %>%
-    normalize_noise_sparsity_results() %>%
-    metrics_long() %>%
-    group_by(
-      .data$analysis,
-      .data$metric,
-      .data$simulate.noise_std,
-      .data$simulate.sparsity_prob
-    ) %>%
-    summarise(
-      mean = mean(.data$value, na.rm = TRUE),
-      median = median(.data$value, na.rm = TRUE),
-      sd = sd(.data$value, na.rm = TRUE),
-      .groups = "drop"
-    )
+  normalized <- normalize_noise_sparsity_results(dscout)
+  long_metrics <- metrics_long(normalized)
+  grouped <- group_by(
+    long_metrics,
+    .data$analysis,
+    .data$metric,
+    .data$simulate.noise_std,
+    .data$simulate.sparsity_prob
+  )
+  summarise(
+    grouped,
+    mean = mean(.data$value, na.rm = TRUE),
+    median = median(.data$value, na.rm = TRUE),
+    sd = sd(.data$value, na.rm = TRUE),
+    .groups = "drop"
+  )
 }
 
 plot_noise_trends <- function(noise_summary) {
@@ -272,14 +275,15 @@ plot_noise_trends <- function(noise_summary) {
 }
 
 plot_noise_boxplots <- function(dscout) {
-  metrics_long(normalize_noise_results(dscout)) %>%
-    ggplot(
-      aes(
-        x = factor(.data$simulate.noise_std),
-        y = .data$value,
-        fill = .data$analysis
-      )
-    ) +
+  noise_long <- metrics_long(normalize_noise_results(dscout))
+  ggplot(
+    noise_long,
+    aes(
+      x = factor(.data$simulate.noise_std),
+      y = .data$value,
+      fill = .data$analysis
+    )
+  ) +
     geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
     labs(
       x = "Noise standard deviation",
@@ -313,14 +317,15 @@ plot_sparsity_trends <- function(sparsity_summary) {
 }
 
 plot_sparsity_boxplots <- function(dscout) {
-  metrics_long(normalize_sparsity_results(dscout)) %>%
-    ggplot(
-      aes(
-        x = factor(.data$simulate.sparsity_prob),
-        y = .data$value,
-        fill = .data$analysis
-      )
-    ) +
+  sparsity_long <- metrics_long(normalize_sparsity_results(dscout))
+  ggplot(
+    sparsity_long,
+    aes(
+      x = factor(.data$simulate.sparsity_prob),
+      y = .data$value,
+      fill = .data$analysis
+    )
+  ) +
     geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
     labs(
       x = "Sparsity probability",
@@ -354,13 +359,9 @@ plot_noise_sparsity_heatmap <- function(joint_summary) {
 }
 
 plot_average_performance <- function(joint_summary) {
-  joint_summary %>%
-    group_by(.data$analysis, .data$metric) %>%
-    summarise(
-      overall_mean = mean(.data$mean, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    ggplot(aes(x = .data$analysis, y = .data$overall_mean, fill = .data$metric)) +
+  grouped <- group_by(joint_summary, .data$analysis, .data$metric)
+  averaged <- summarise(grouped, overall_mean = mean(.data$mean, na.rm = TRUE), .groups = "drop")
+  ggplot(averaged, aes(x = .data$analysis, y = .data$overall_mean, fill = .data$metric)) +
     geom_col(position = position_dodge(width = 0.75)) +
     labs(
       x = "Analysis module",
