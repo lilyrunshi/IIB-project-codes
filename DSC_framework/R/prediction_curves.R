@@ -311,7 +311,7 @@ plot_model3_signal_predictions <- function(
     dsc_path <- normalizePath(dsc_path, winslash = "/", mustWork = TRUE)
     query_fun <- require_dscquery()
     message("Querying DSC outputs from: ", dsc_path)
-    dsc_table <- query_fun(
+    query_args <- list(
       dsc.outdir = dsc_path,
       targets = c(
         "simulate.noise_std",
@@ -321,9 +321,18 @@ plot_model3_signal_predictions <- function(
         "simulate.w_true",
         "analyze",
         "analyze.fit"
-      ),
-      return.files = TRUE
+      )
     )
+
+    query_formals <- names(formals(query_fun))
+    if (!is.null(query_formals) && "return.files" %in% query_formals) {
+      query_args$return.files <- TRUE
+    } else if (!is.null(query_formals) && "output.file_columns" %in% query_formals) {
+      # dscrutils >= 0.2.0 renamed return.files to output.file_columns.
+      query_args$output.file_columns <- TRUE
+    }
+
+    dsc_table <- do.call(query_fun, query_args)
   }
 
   if (!inherits(dsc_table, "tbl_df")) {
