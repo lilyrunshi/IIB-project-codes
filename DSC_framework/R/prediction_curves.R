@@ -27,7 +27,7 @@ require_dscquery <- function() {
         paste0(
           "Could not load dscrutils::dscquery(). Install the 'dscrutils' package",
           " or supply the DSC results manually via the `dsc_table` argument.")
-      ),
+      )
       call. = FALSE
     }
   )
