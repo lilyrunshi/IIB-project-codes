@@ -154,12 +154,10 @@ query_noise_sparsity_results <- function(
     metric_targets,
     extra_targets
   ))
-  results <- dscquery(
-    dsc_path,
-    modules = modules,
-    targets = targets
-  )
+
+  results <- dscquery(dsc.outdir = dsc_path, targets = targets)
   results <- as_tibble(results)
+
   if (!"analysis" %in% names(results)) {
     if ("module" %in% names(results)) {
       results <- mutate(results, analysis = .data$module)
@@ -172,6 +170,22 @@ query_noise_sparsity_results <- function(
       results <- mutate(results, analysis = sprintf("analysis_%s", seq_len(n())))
     }
   }
+
+  if (!is.null(modules)) {
+    module_column <- intersect(c("analysis", "module", "method"), names(results))
+    if (length(module_column) > 0) {
+      results <- results %>%
+        filter(.data[[module_column[[1]]]] %in% modules)
+    } else {
+      warning(
+        paste(
+          "`modules` argument supplied but DSC results do not contain a recognised",
+          "module column; returning all analyses."
+        )
+      )
+    }
+  }
+
   results
 }
 
