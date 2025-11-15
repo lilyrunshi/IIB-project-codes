@@ -24,17 +24,11 @@ model3_simulate: model3_simulate.py
   n: 200         # samples
   d: 3           # sinusoidal features (sin, cos, intercept)
   seed: 8675309  # reproducibility for the latent draws
-  a0: 3.0        # prior shape for coefficient precision (E[alpha] = 1)
-  b0: 3.0        # prior rate for coefficient precision
-  c0: 5.0        # prior shape for observation precision (E[β^{-1}] ≈ 0.1)
-  d0: 0.4        # prior rate for observation precision
-  e0: 8.0        # prior alpha for sparsity probability (mean 0.8)
-  f0: 2.0        # prior beta for sparsity probability
+  noise_std: 0.1 # desired observation noise scale
+  sparsity_prob: 0.8  # desired probability that the sinusoidal group is active
   $x: x
   $y: y
   $w_true: w_true
-  $noise_std: noise_std
-  $sparsity_prob: sparsity_prob
 
 # --- analyze (complex: separate Python files) ---
 model1a: model_1a_bayesian_regression_shared_prior.py
