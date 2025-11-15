@@ -195,6 +195,35 @@ extract_weights <- function(fit_object) {
   stop("Could not find regression weights in fit object.", call. = FALSE)
 }
 
+infer_time_from_design <- function(design_matrix, frequency = 1.0) {
+  if (!is.numeric(frequency) || length(frequency) != 1 || frequency <= 0) {
+    stop("Frequency must be a positive numeric scalar.", call. = FALSE)
+  }
+  if (is.null(design_matrix)) {
+    return(NULL)
+  }
+  design_matrix <- tryCatch(
+    as.matrix(design_matrix),
+    error = function(e) NULL
+  )
+  if (is.null(design_matrix) || ncol(design_matrix) < 2) {
+    stop(
+      "The design matrix must have at least two columns (sin and cos components).",
+      call. = FALSE
+    )
+  }
+
+  sin_component <- as.numeric(design_matrix[, 1])
+  cos_component <- as.numeric(design_matrix[, 2])
+  if (length(sin_component) != length(cos_component)) {
+    stop("Design matrix sin/cos components are misaligned.", call. = FALSE)
+  }
+
+  angles <- atan2(sin_component, cos_component)
+  angles[angles < 0] <- angles[angles < 0] + 2 * pi
+  angles / (2 * pi * frequency)
+}
+
 read_model3_simulation <- function(row, root_dir, frequency = 1.0) {
   if (is.data.frame(row)) {
     row <- as.list(row)
@@ -205,7 +234,20 @@ read_model3_simulation <- function(row, root_dir, frequency = 1.0) {
     time_points <- as.numeric(latent$time)
   }
   if (is.null(time_points)) {
-    stop("Latent time points were not found in the simulation output.", call. = FALSE)
+    design_matrix <- load_dsc_output(row$simulate.x, root_dir)
+    if (is.list(design_matrix) && length(design_matrix) == 1) {
+      design_matrix <- design_matrix[[1]]
+    }
+    time_points <- infer_time_from_design(design_matrix, frequency = frequency)
+  }
+  if (is.null(time_points)) {
+    stop(
+      paste(
+        "Unable to recover simulation time points. Provide simulate.latent with",
+        "a 'time' entry or expose the design matrix via simulate.x."
+      ),
+      call. = FALSE
+    )
   }
   observed <- load_dsc_output(row$simulate.y, root_dir)
   if (is.list(observed) && length(observed) == 1) {
@@ -240,14 +282,13 @@ read_model3_simulation <- function(row, root_dir, frequency = 1.0) {
 }
 
 prepare_prediction_curves <- function(dsc_table, root_dir, frequency = 1.0) {
-  if (!"simulate.latent" %in% names(dsc_table) ||
-      !"simulate.y" %in% names(dsc_table) ||
+  if (!"simulate.y" %in% names(dsc_table) ||
       !"simulate.w_true" %in% names(dsc_table) ||
       !"analyze.fit" %in% names(dsc_table)) {
     stop(
       paste0(
         "The DSC table is missing required columns. Ensure that dscquery() was ",
-        "invoked with targets including simulate.latent, simulate.y, simulate.w_true, and analyze.fit."
+        "invoked with targets including simulate.y, simulate.w_true, and analyze.fit."
       ),
       call. = FALSE
     )
@@ -266,7 +307,7 @@ prepare_prediction_curves <- function(dsc_table, root_dir, frequency = 1.0) {
   dsc_table$dataset_id <- as.integer(dataset_ids)
 
   simulations <- dsc_table %>%
-    select(dataset_id, simulate.latent, simulate.y, simulate.w_true, simulate.noise_std, simulate.sparsity_prob) %>%
+    select(dataset_id, any_of(c("simulate.latent", "simulate.x")), simulate.y, simulate.w_true, simulate.noise_std, simulate.sparsity_prob) %>%
     distinct() %>%
     rowwise() %>%
     mutate(data = list(read_model3_simulation(cur_data_all(), root_dir, frequency = frequency))) %>%
@@ -316,7 +357,7 @@ plot_model3_signal_predictions <- function(
       targets = c(
         "simulate.noise_std",
         "simulate.sparsity_prob",
-        "simulate.latent",
+        "simulate.x",
         "simulate.y",
         "simulate.w_true",
         "analyze",
