@@ -102,7 +102,10 @@ them).  The folder structure mirrors the module names defined in `main.dsc`.
   ```
   Each plot overlays the simulated observations with model-specific prediction
   lines, with filenames encoding the noise and sparsity settings for easy
-  navigation.【F:DSC_framework/R/prediction_curves.R†L242-L431】
+  navigation.【F:DSC_framework/R/prediction_curves.R†L242-L431】 When runs omit the
+  latent time vector, the helper reconstructs sampling times from the saved
+  design matrix (`simulate.x`), keeping existing DSC results compatible without
+  requiring re-simulation.【F:DSC_framework/R/prediction_curves.R†L142-L241】
 
 ## Extending the workflow
 
