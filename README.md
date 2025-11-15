@@ -103,10 +103,11 @@ them).  The folder structure mirrors the module names defined in `main.dsc`.
   ```
   Each plot overlays the simulated observations with model-specific prediction
   lines, with filenames encoding the noise and sparsity settings for easy
-  navigation.【F:DSC_framework/R/prediction_curves.R†L242-L431】 The helper
-  reconstructs sampling times directly from the sinusoidal design matrix
-  (`simulate.x`) and uses the simulated `w` coefficients (sin, cos, intercept)
-  to rebuild the true signal for reference.【F:DSC_framework/R/prediction_curves.R†L142-L241】
+  navigation.【F:DSC_framework/R/prediction_curves.R†L242-L431】 The helper draws
+  the original simulated signal with a dashed line, reconstructs sampling times
+  directly from the sinusoidal design matrix (`simulate.x`), and uses the
+  simulated `w` coefficients (sin, cos, intercept) to rebuild the reference
+  curve.【F:DSC_framework/R/prediction_curves.R†L142-L241】【F:DSC_framework/R/prediction_curves.R†L300-L420】
 
 ## Extending the workflow
 
