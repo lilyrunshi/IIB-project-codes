@@ -111,12 +111,65 @@ compute_simulation_signal <- function(sim_obj, design_matrix) {
   NULL
 }
 
+#' Resolve which column in the design matrix represents time when it is not
+#' explicitly provided by the simulation output.
+#'
+#' @param design_matrix Numeric design matrix for the replicate.
+#' @param feature_index Optional user supplied column index or name.
+#' @return Integer column index to use for recovering the time covariate, or
+#'   ``NA_integer_`` if no suitable column could be determined.
+resolve_time_feature <- function(design_matrix, feature_index = NULL) {
+  if (is.null(design_matrix) || !is.matrix(design_matrix) || ncol(design_matrix) == 0L) {
+    return(NA_integer_)
+  }
+
+  n_features <- ncol(design_matrix)
+  if (!missing(feature_index) && !is.null(feature_index) && length(feature_index) > 0L) {
+    supplied <- feature_index[[1]]
+    supplied_int <- suppressWarnings(as.integer(supplied))
+    if (!is.na(supplied_int) && supplied_int >= 1L && supplied_int <= n_features) {
+      return(supplied_int)
+    }
+
+    colnames <- colnames(design_matrix)
+    if (!is.null(colnames)) {
+      supplied_chr <- tolower(as.character(supplied))
+      match_idx <- which(tolower(colnames) == supplied_chr)
+      if (length(match_idx)) {
+        return(match_idx[[1]])
+      }
+    }
+  }
+
+  colnames <- colnames(design_matrix)
+  if (!is.null(colnames)) {
+    canonical_names <- c("time", "time_points", "times", "t", "x", "x_value")
+    normalized <- tolower(colnames)
+    match_idx <- which(normalized %in% canonical_names)
+    if (length(match_idx)) {
+      return(match_idx[[1]])
+    }
+  }
+
+  numeric_cols <- which(vapply(seq_len(n_features), function(idx) {
+    is.numeric(design_matrix[, idx])
+  }, logical(1)))
+  if (length(numeric_cols)) {
+    return(numeric_cols[[1]])
+  }
+
+  1L
+}
+
 #' Extract the time axis used by the simulation.
 #'
 #' @param sim_obj Simulation output list.
 #' @param n_obs Number of observations in the replicate.
+#' @param design_matrix Numeric design matrix associated with the replicate.
+#' @param feature_index Optional column index or name to prefer when the design
+#'   matrix must be used to recover the time variable.
 #' @return Numeric vector of length ``n_obs`` describing the sampling locations.
-extract_time_values <- function(sim_obj, n_obs, design_matrix = NULL, feature_index = 1L) {
+extract_time_values <- function(sim_obj, n_obs, design_matrix = NULL, feature_index = NULL) {
   candidates <- list(sim_obj$time_points, sim_obj$time, sim_obj$times, sim_obj$t)
 
   dsc_time <- tryCatch(sim_obj$DSC_DEBUG$time, error = function(...) NULL)
@@ -133,11 +186,14 @@ extract_time_values <- function(sim_obj, n_obs, design_matrix = NULL, feature_in
     }
   }
 
-  if (!is.null(design_matrix) && is.matrix(design_matrix) && ncol(design_matrix) >= feature_index) {
-    candidate <- design_matrix[, feature_index]
-    candidate_vec <- as.numeric(candidate)
-    if (length(candidate_vec) == n_obs) {
-      return(candidate_vec)
+  if (!is.null(design_matrix) && is.matrix(design_matrix) && ncol(design_matrix) > 0L) {
+    resolved_index <- resolve_time_feature(design_matrix, feature_index)
+    if (!is.na(resolved_index) && resolved_index >= 1L && resolved_index <= ncol(design_matrix)) {
+      candidate <- design_matrix[, resolved_index]
+      candidate_vec <- as.numeric(candidate)
+      if (length(candidate_vec) == n_obs) {
+        return(candidate_vec)
+      }
     }
   }
 
@@ -205,6 +261,10 @@ extract_weight_vector <- function(fit_obj, n_features) {
 #'   to skip saving.
 #' @param display_plots Should the plots be printed as they are generated?
 #'   Defaults to ``interactive()``.
+#' @param feature_index Optional column index or name used to recover the time
+#'   variable from the design matrix when it cannot be parsed from the simulation
+#'   metadata. When ``NULL`` the function attempts to detect an appropriate
+#'   column automatically.
 #' @param replicates Optional integer vector specifying which DSC replicates to
 #'   include. When ``NULL`` all replicates are plotted.
 #' @return A named list containing the assembled plotting data and ``ggplot``
@@ -214,6 +274,7 @@ plot_prediction_curves <- function(
     pause_seconds = 0,
     output_dir = file.path("plot_outputs", "predictions"),
     display_plots = interactive(),
+    feature_index = NULL,
     replicates = NULL) {
   reticulate <- require_reticulate()
   if (!is.null(output_dir)) {
@@ -221,10 +282,6 @@ plot_prediction_curves <- function(
   }
   pause_seconds <- max(0, pause_seconds %||% 0)
   display_plots <- isTRUE(display_plots)
-  feature_index <- as.integer(feature_index %||% 1L)
-  if (is.na(feature_index) || feature_index < 1L) {
-    feature_index <- 1L
-  }
 
   dsc_path <- normalizePath(dsc_path, winslash = "/", mustWork = TRUE)
   simulate_dir <- file.path(dsc_path, "model3_simulate")
