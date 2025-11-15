@@ -15,13 +15,14 @@ expects the following variables to be defined in the global namespace:
     Number of covariates (features) per observation.
 ``seed``
     Seed for the random number generator to ensure reproducibility.
-``a0, b0, c0, d0, e0, f0``
-    Hyperparameters for the Gamma/Beta priors described in the model. In the
-    accompanying ``main.dsc`` configuration these are set to (3.0, 3.0, 5.0,
-    0.4, 8.0, 2.0) to produce pronounced rhythmic structure with light
-    observational noise. The sparsity probability ``π`` is sampled from the
-    Beta prior ``Beta(e0, f0)`` and governs whether the sinusoidal group is
-    active.
+``noise_std``
+    Target standard deviation of the observation noise. The script selects
+    Gamma hyperparameters ``(c0, d0)`` so that the prior expectation of the
+    observation variance matches this value.
+``sparsity_prob``
+    Desired mean activation probability for the sinusoidal group. The script
+    converts this into Beta hyperparameters ``(e0, f0)`` for the Bernoulli
+    switch that toggles the sinusoidal coefficients.
 
 The observation noise variance is governed by the latent precision ``β`` which
 follows a Gamma prior with hyperparameters ``c0`` (shape) and ``d0`` (rate). The
@@ -39,6 +40,44 @@ from matplotlib import pyplot as plt
 
 # Create a random number generator that can be seeded from the DSC configuration.
 rng = np.random.default_rng(seed)
+
+
+DEFAULT_ALPHA_SHAPE = 3.0
+DEFAULT_ALPHA_RATE = 3.0
+NOISE_SHAPE = 5.0
+BETA_CONCENTRATION = 10.0
+
+
+def _gamma_hyperparameters_from_noise_std(target_std, shape=NOISE_SHAPE):
+    """Return Gamma(shape, rate) parameters with E[β^{-1}] = target_std.
+
+    Parameters
+    ----------
+    target_std : float
+        Desired standard deviation for the observation noise.
+    shape : float, optional
+        Shape parameter used to construct the Gamma prior. Must exceed 1.0 so
+        that E[β^{-1}] exists.
+    """
+
+    if target_std <= 0:
+        raise ValueError("noise_std must be strictly positive")
+    if shape <= 1.0:
+        raise ValueError("shape must exceed 1 to compute E[β^{-1}]")
+
+    rate = (shape - 1.0) / target_std
+    return shape, rate
+
+
+def _beta_hyperparameters_from_probability(probability,
+                                           concentration=BETA_CONCENTRATION):
+    """Return Beta(alpha, beta) parameters with E[π] = probability."""
+
+    if not 0 <= probability <= 1:
+        raise ValueError("sparsity_prob must lie in [0, 1]")
+    alpha = probability * concentration
+    beta = (1.0 - probability) * concentration
+    return alpha, beta
 
 def _build_design_matrix(time_points, frequency=1.0):
     """Construct the sinusoidal design matrix used by Model 3.
@@ -101,22 +140,21 @@ def plot_generated_data(time_points, observations, signal=None, filename=None):
 
 
 
+# Derive the prior hyperparameters from the requested noise/sparsity levels.
+a0 = DEFAULT_ALPHA_SHAPE
+b0 = DEFAULT_ALPHA_RATE
+c0, d0 = _gamma_hyperparameters_from_noise_std(noise_std)
+e0, f0 = _beta_hyperparameters_from_probability(sparsity_prob)
+
 # Sample global latent variables from their respective priors.
 alpha = rng.gamma(shape=a0, scale=1.0 / b0)
 beta = rng.gamma(shape=c0, scale=1.0 / d0)
 pi = rng.beta(e0, f0)
 
-if c0 <= 1.0:
-    raise ValueError(
-        "The shape parameter c0 must be greater than 1 for E[β^{-1}] to exist."
-    )
-
 # Compute the observation noise scale as the expectation of β^{-1} when
 # β ~ Gamma(c0, d0). Under the (shape, rate) parameterisation this equals
 # d0 / (c0 - 1).
-expected_inv_beta = d0 / (c0 - 1.0)
-sparsity_prob = float(e0 / (e0 + f0))
-noise_std = float(expected_inv_beta)
+noise_scale = d0 / (c0 - 1.0)
 
 # Bernoulli switch shared by the sinusoidal features; the intercept remains on.
 omega_switch = rng.binomial(1, pi)
@@ -129,7 +167,7 @@ gamma_vector = np.array([omega_switch, omega_switch, 1.0])
 time_points = rng.uniform(low=0.0, high=1.0, size=n)
 x = _build_design_matrix(time_points)
 signal = x @ (gamma_vector * omega)
-noise = rng.normal(loc=0.0, scale=noise_std, size=n)
+noise = rng.normal(loc=0.0, scale=noise_scale, size=n)
 y = signal + noise
 
 plot_generated_data(time_points, y, signal=signal, filename="model3_generated_data.png")
@@ -143,9 +181,7 @@ w_true = gamma_vector * omega
 latent = {
     "alpha": float(alpha),
     "beta": float(beta),
-    "expected_inv_beta": float(expected_inv_beta),
-    "noise_std": float(noise_std),
-    "sparsity_prob": float(sparsity_prob),
+    "noise_std": float(noise_scale),
     "pi": float(pi),
     "omega_switch": int(omega_switch),
     "weights": w_true.tolist(),
